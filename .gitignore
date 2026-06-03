@@ -114,3 +114,17 @@ docker-compose.override.yml
 # ------------------------------------------------------------
 *.bak
 *.orig
+# Local one-shot import tools
+tools/importers/
+
+# Temporary import/review files
+tmp/
+*.csv
+
+# Downloaded archives
+*.zip
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
