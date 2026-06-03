@@ -1,0 +1,26 @@
+{
+  "setup": {
+    "kicker": "Operazioni persistenti di compagnia aerea virtuale",
+    "title": "Parti da zero. Costruisci una compagnia globale.",
+    "copy": "Scegli un piccolo aeroporto commerciale come base, opera in UTC, usa codici ICAO reali e cresci tramite contratti, aerei, personale e rotte.",
+    "formTitle": "Crea la tua compagnia",
+    "language": "Lingua interfaccia",
+    "currency": "Valuta conto",
+    "nickname": "Nickname",
+    "airlineName": "Nome compagnia",
+    "baseAirport": "Aeroporto base iniziale",
+    "zeroBudgetNote": "Ogni compagnia parte con saldo zero. I fondi iniziali arriveranno più avanti da contratti, prestiti, missioni o altre meccaniche di gioco.",
+    "start": "Inizia le operazioni"
+  },
+  "dashboard": {
+    "mapTitle": "Mappa operativa mondiale",
+    "mapCopy": "Questo primo prototipo usa un placeholder grafico. Il prossimo passo è collegare MapLibre GL JS e disegnare aerei, aeroporti e rotte reali.",
+    "companyStatus": "Stato compagnia",
+    "balance": "Saldo",
+    "reputation": "Reputazione",
+    "activeFlights": "Voli attivi",
+    "aircraft": "Aerei",
+    "nextStep": "Prossimo passo",
+    "nextStepCopy": "Collegare il seed aeroporti a MySQL, poi sostituire il placeholder mappa con MapLibre GL JS."
+  }
+}

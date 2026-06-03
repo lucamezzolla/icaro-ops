@@ -1,0 +1,26 @@
+{
+  "setup": {
+    "kicker": "Persistent virtual airline operations",
+    "title": "Start from zero. Build a global airline.",
+    "copy": "Choose a small commercial base airport, operate in UTC, use real ICAO codes and grow through contracts, aircraft, staff and routes.",
+    "formTitle": "Create your airline",
+    "language": "Interface language",
+    "currency": "Account currency",
+    "nickname": "Nickname",
+    "airlineName": "Airline name",
+    "baseAirport": "Initial base airport",
+    "zeroBudgetNote": "Every airline starts with a zero balance. Initial money will come from contracts, loans, missions or other game mechanics later.",
+    "start": "Start operations"
+  },
+  "dashboard": {
+    "mapTitle": "World operations map",
+    "mapCopy": "This first prototype uses a styled placeholder. The next step is to connect MapLibre GL JS and draw real aircraft markers, airports and routes.",
+    "companyStatus": "Company status",
+    "balance": "Balance",
+    "reputation": "Reputation",
+    "activeFlights": "Active flights",
+    "aircraft": "Aircraft",
+    "nextStep": "Next step",
+    "nextStepCopy": "Connect the airport seed to MySQL, then replace the placeholder map with MapLibre GL JS."
+  }
+}
