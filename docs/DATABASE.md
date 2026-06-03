@@ -1,34 +1,55 @@
-# Icaro Ops Database v1
+# Icaro Ops Database v2
 
-This is the first MySQL/MariaDB database structure for Icaro Ops.
+This version changes the initial base selection model.
 
-## Language rule
+## User-facing base selection flow
 
-Database content must stay in English.
+```text
+World region
+→ Country / territory
+→ Airport
+```
 
-The game interface is multilingual, but translations must live in the i18n layer, not in database rows.
+## Important rule
+
+ICAO remains primary for airports.
+
+The `airports` table uses:
+
+```sql
+icao_code CHAR(4) PRIMARY KEY
+```
+
+This means future game references to an airport should use the ICAO code whenever possible.
+
+## Current data included
+
+This version includes:
+
+- world regions
+- countries / territories grouped by region
+- empty `icao_prefixes`
+- empty `airports`
+- empty `airport_game_profiles`
+
+Airports are intentionally empty because the long airport list will be added later.
 
 ## Main tables
 
-- `icao_regions`
+- `world_regions`
+- `countries`
 - `icao_prefixes`
 - `airports`
 - `airport_game_profiles`
 - `airlines`
 
-## Why airport data is split
+## Useful views
 
-`airports` contains descriptive real-world airport data.
+- `v_base_selection_regions`
+- `v_base_selection_countries`
+- `v_base_selection_airports`
 
-`airport_game_profiles` contains game balancing values such as:
-
-- starter base availability
-- airport size
-- slot cost level
-- demand levels
-- maximum aircraft class
-
-This makes it possible to import many real airports while controlling which ones are suitable for a novice airline manager.
+Since airports are empty for now, airport counts will be zero until the airport import is added.
 
 ## Install locally
 
@@ -38,48 +59,41 @@ From the project root:
 mysql -u root -p < db/mysql/999_create_all.sql
 ```
 
-If `SOURCE` paths do not resolve on your system, run files one by one in numeric order:
+If you use MariaDB with sudo:
 
 ```bash
-mysql -u root -p < db/mysql/000_create_database.sql
-mysql -u root -p < db/mysql/001_create_icao_regions.sql
-mysql -u root -p < db/mysql/002_create_icao_prefixes.sql
-mysql -u root -p < db/mysql/003_create_airports.sql
-mysql -u root -p < db/mysql/004_create_airport_game_profiles.sql
-mysql -u root -p < db/mysql/005_create_airlines.sql
-mysql -u root -p < db/mysql/006_seed_icao_regions.sql
-mysql -u root -p < db/mysql/007_seed_icao_prefixes.sql
-mysql -u root -p < db/mysql/008_seed_starter_airports.sql
-mysql -u root -p < db/mysql/009_seed_airport_game_profiles.sql
-mysql -u root -p < db/mysql/010_views_base_selection.sql
+sudo mysql < db/mysql/999_create_all.sql
 ```
 
-## Useful checks
+## Reset local database
+
+During early development, the simplest reset is:
+
+```bash
+sudo mysql -e "DROP DATABASE IF EXISTS icaro_ops;"
+sudo mysql < db/mysql/999_create_all.sql
+```
+
+## Checks
 
 ```sql
 USE icaro_ops;
 
-SELECT * FROM v_base_selection_regions ORDER BY region_code;
+SELECT * FROM v_base_selection_regions ORDER BY region_name;
 
 SELECT
-  region_code,
-  prefix,
-  icao_code,
-  airport_name,
-  city,
+  region_name,
+  subregion_name,
   country_name,
-  starter_difficulty,
-  max_aircraft_class
-FROM v_base_selection_airports
-ORDER BY region_code, country_name, city;
+  airport_count
+FROM v_base_selection_countries
+ORDER BY region_name, subregion_name, country_name;
+
+SELECT COUNT(*) FROM airports;
 ```
 
-## Next step
+Expected airport count for this version:
 
-The next database step is to expand `icao_prefixes` and import a larger worldwide airport dataset.
-
-The first UI step is to make the setup flow use:
-
-1. region
-2. ICAO prefix / country
-3. starter airport
+```text
+0
+```
