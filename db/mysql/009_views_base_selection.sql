@@ -68,6 +68,7 @@ SELECT
   a.latitude,
   a.longitude,
   a.airport_type,
+  a.operator_country_name,
   gp.airport_size,
   gp.starter_difficulty,
   gp.slot_cost_level,

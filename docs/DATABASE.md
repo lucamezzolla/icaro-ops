@@ -1,6 +1,6 @@
-# Icaro Ops Database v2
+# Icaro Ops Database v3
 
-This version changes the initial base selection model.
+This version updates the initial base selection model and country/territory seed.
 
 ## User-facing base selection flow
 
@@ -20,19 +20,29 @@ The `airports` table uses:
 icao_code CHAR(4) PRIMARY KEY
 ```
 
-This means future game references to an airport should use the ICAO code whenever possible.
+Future game references to an airport should use the ICAO code whenever possible.
 
 ## Current data included
 
 This version includes:
 
-- world regions
-- countries / territories grouped by region
+- 7 world regions
+- 244 country/territory rows grouped by world region
 - empty `icao_prefixes`
 - empty `airports`
 - empty `airport_game_profiles`
 
 Airports are intentionally empty because the long airport list will be added later.
+
+## Country/territory counts
+
+- AFRICA: 59
+- ANTARCTICA: 1
+- ASIA: 55
+- EUROPE: 50
+- NORTH_AMERICA: 39
+- OCEANIA: 26
+- SOUTH_AMERICA: 14
 
 ## Main tables
 
@@ -50,6 +60,17 @@ Airports are intentionally empty because the long airport list will be added lat
 - `v_base_selection_airports`
 
 Since airports are empty for now, airport counts will be zero until the airport import is added.
+
+## Antarctica note
+
+Antarctica is modeled as:
+
+```text
+Region: Antarctica
+Country/Territory: Antarctica
+```
+
+When Antarctic airports, skiways and heliports are imported later, use `operator_country_name` to store the managing/operator country shown in source lists.
 
 ## Install locally
 

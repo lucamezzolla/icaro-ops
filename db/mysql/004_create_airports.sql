@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS airports (
   is_military BOOLEAN NOT NULL DEFAULT FALSE,
   is_closed BOOLEAN NOT NULL DEFAULT FALSE,
 
+  operator_country_name VARCHAR(160) NULL,
   data_source_name VARCHAR(120) NULL,
   data_source_url VARCHAR(500) NULL,
   data_quality ENUM('UNVERIFIED', 'PARTIAL', 'VERIFIED') NOT NULL DEFAULT 'UNVERIFIED',
