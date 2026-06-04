@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icaro Ops - Create Company</title>
+  <link rel="stylesheet" href="src/css/signup.css">
+</head>
+<body>
+  <main class="signup-shell">
+    <section class="hero-card">
+      <p class="eyebrow">Icaro Ops</p>
+      <h1>Create your airline</h1>
+      <p>
+        Choose your identity and starting base. Your base will affect local offers,
+        airport fees, competition, passenger demand and cargo opportunities.
+      </p>
+    </section>
+
+    <form id="signupForm" class="signup-card" autocomplete="off">
+      <section class="form-section">
+        <div class="section-title">
+          <span>1</span>
+          <div>
+            <h2>Company setup</h2>
+            <p>These settings define the airline profile shown in game.</p>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Nickname
+            <input id="nickname" name="nickname" required maxlength="40" placeholder="e.g. SkyFox">
+          </label>
+
+          <label>
+            Company name
+            <input id="companyName" name="companyName" required maxlength="80" placeholder="e.g. Aurora Regional">
+          </label>
+
+          <label>
+            Interface language
+            <select id="interfaceLanguage" name="interfaceLanguage" required>
+              <option value="it">Italiano</option>
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="pt">Português</option>
+              <option value="fr">Français</option>
+            </select>
+          </label>
+
+          <label>
+            Virtual account currency
+            <select id="currencyCode" name="currencyCode" required>
+              <option value="EUR">Euro</option>
+              <option value="USD">US Dollar</option>
+            </select>
+          </label>
+
+          <label class="wide">
+            Company logo
+            <input id="companyLogo" name="companyLogo" type="file" accept="image/png,image/jpeg,image/webp">
+          </label>
+        </div>
+      </section>
+
+      <section class="form-section">
+        <div class="section-title">
+          <span>2</span>
+          <div>
+            <h2>Starting base</h2>
+            <p>Select region, country and a small airport suitable for early operations.</p>
+          </div>
+        </div>
+
+        <div class="notice">
+          The starting base determines your first local offers: short passenger flights,
+          light cargo, tourism, private transfers, fees and local competition.
+        </div>
+
+        <div class="form-grid">
+          <label>
+            Region
+            <select id="regionSelect" required>
+              <option value="">Loading regions...</option>
+            </select>
+          </label>
+
+          <label>
+            Country
+            <select id="countrySelect" required disabled>
+              <option value="">Choose a region first</option>
+            </select>
+          </label>
+
+          <label class="wide">
+            Starting airport
+            <select id="airportSelect" required disabled>
+              <option value="">Choose a country first</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="form-section">
+        <div class="section-title">
+          <span>3</span>
+          <div>
+            <h2>Local market preview</h2>
+            <p>Review the expected early-game conditions before confirming.</p>
+          </div>
+        </div>
+
+        <article id="marketPreview" class="market-preview empty">
+          <h3>No airport selected</h3>
+          <p>Choose a starting airport to see local demand, costs and difficulty.</p>
+        </article>
+      </section>
+
+      <div id="formError" class="form-error" hidden></div>
+
+      <div class="actions">
+        <button type="submit">Create company</button>
+      </div>
+    </form>
+  </main>
+
+  <script src="src/js/signup.js"></script>
+</body>
+</html>

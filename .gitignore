@@ -128,3 +128,6 @@ tmp/
 __pycache__/
 *.pyc
 *.pyo
+
+# Local PHP config
+api/config.local.php

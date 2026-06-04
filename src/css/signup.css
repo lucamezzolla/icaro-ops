@@ -1,0 +1,268 @@
+:root {
+  color-scheme: dark;
+  --bg: #07101d;
+  --card: rgba(14, 28, 48, 0.88);
+  --card-strong: rgba(20, 40, 68, 0.96);
+  --text: #eef6ff;
+  --muted: #a9bed4;
+  --line: rgba(255,255,255,0.12);
+  --accent: #5fd3ff;
+  --accent-2: #96f2c6;
+  --danger: #ff8c8c;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 20% 10%, rgba(95, 211, 255, 0.20), transparent 35%),
+    radial-gradient(circle at 85% 20%, rgba(150, 242, 198, 0.16), transparent 32%),
+    linear-gradient(135deg, #050914, var(--bg));
+}
+
+.signup-shell {
+  width: min(1180px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 40px 0;
+  display: grid;
+  grid-template-columns: 0.8fr 1.2fr;
+  gap: 24px;
+}
+
+.hero-card,
+.signup-card {
+  border: 1px solid var(--line);
+  background: var(--card);
+  backdrop-filter: blur(18px);
+  border-radius: 28px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.36);
+}
+
+.hero-card {
+  position: sticky;
+  top: 32px;
+  align-self: start;
+  min-height: 460px;
+  padding: 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+.hero-card::before {
+  content: "";
+  position: absolute;
+  inset: 24px;
+  border-radius: 24px;
+  background:
+    linear-gradient(140deg, rgba(95,211,255,0.18), transparent),
+    url("data:image/svg+xml,%3Csvg width='600' height='420' viewBox='0 0 600 420' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='.16'%3E%3Cpath d='M38 310 C180 230 270 260 410 130 S570 90 610 40'/%3E%3Cpath d='M80 350 C220 280 340 300 520 180'/%3E%3Ccircle cx='190' cy='250' r='3' fill='%23fff'/%3E%3Ccircle cx='410' cy='130' r='3' fill='%23fff'/%3E%3Ccircle cx='520' cy='180' r='3' fill='%23fff'/%3E%3Cpath d='M330 210 l58 -18 -32 48 -10 -24 -28 20z' fill='%23fff' fill-opacity='.22' stroke='none'/%3E%3C/g%3E%3C/svg%3E") center / cover no-repeat;
+  z-index: -1;
+}
+
+.eyebrow {
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+}
+
+.hero-card h1 {
+  margin: 8px 0 12px;
+  font-size: clamp(2.4rem, 5vw, 4.4rem);
+  line-height: 0.95;
+}
+
+.hero-card p:last-child {
+  color: var(--muted);
+  font-size: 1.05rem;
+  line-height: 1.65;
+}
+
+.signup-card {
+  padding: 28px;
+}
+
+.form-section {
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.form-section:first-child { padding-top: 0; }
+.form-section:last-of-type { border-bottom: 0; }
+
+.section-title {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.section-title span {
+  display: grid;
+  place-items: center;
+  flex: 0 0 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #04101d;
+  font-weight: 800;
+}
+
+.section-title h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.section-title p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+label {
+  color: var(--muted);
+  font-size: 0.92rem;
+  display: grid;
+  gap: 8px;
+}
+
+label.wide { grid-column: 1 / -1; }
+
+input,
+select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 13px 14px;
+  background: rgba(255,255,255,0.07);
+  color: var(--text);
+  outline: none;
+  font: inherit;
+}
+
+select option {
+  color: #07101d;
+}
+
+input:focus,
+select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(95, 211, 255, 0.14);
+}
+
+.notice {
+  margin-bottom: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(95, 211, 255, 0.30);
+  border-radius: 16px;
+  color: #d9f5ff;
+  background: rgba(95, 211, 255, 0.10);
+  line-height: 1.5;
+}
+
+.market-preview {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--card-strong);
+  padding: 20px;
+}
+
+.market-preview.empty {
+  color: var(--muted);
+}
+
+.market-preview h3 {
+  margin: 0 0 6px;
+  font-size: 1.25rem;
+}
+
+.market-preview p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.market-grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.market-metric {
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.07);
+}
+
+.market-metric strong {
+  display: block;
+  font-size: 1.3rem;
+  color: var(--accent-2);
+}
+
+.market-metric span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.form-error {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 14px;
+  color: #300;
+  background: var(--danger);
+}
+
+.actions {
+  padding-top: 22px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+button {
+  border: 0;
+  border-radius: 999px;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #04101d;
+  font-weight: 800;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+button:hover { filter: brightness(1.05); }
+
+@media (max-width: 860px) {
+  .signup-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-card {
+    min-height: 260px;
+    position: relative;
+    top: auto;
+  }
+}
+
+@media (max-width: 620px) {
+  .form-grid,
+  .market-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .signup-shell {
+    width: min(100% - 20px, 1180px);
+    padding: 20px 0;
+  }
+}
