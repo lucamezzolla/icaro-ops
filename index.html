@@ -30,9 +30,9 @@
       </section>
 
       <section class="panel">
-        <h2>Base market</h2>
+        <h2>Local market potential</h2>
         <div id="marketSummary" class="market-list">
-          <p class="muted">Select or load your base to see local market details.</p>
+          <p class="muted">Select a base to see local market potential.</p>
         </div>
       </section>
 
@@ -51,7 +51,7 @@
           <a href="#">Fleet</a>
           <a href="#">Offers</a>
           <a href="#">Finance</a>
-          <a href="#">Settings</a>
+          <a href="#" id="settingsNavLink">Settings</a>
         </nav>
         <div id="utcClock" class="utc-clock">---- -- -- --:--:-- UTC</div>
       </header>
@@ -61,6 +61,21 @@
         <button type="submit">Search</button>
         <div id="airportSearchResults" class="search-results" hidden></div>
       </form>
+
+      <section id="settingsPanel" class="settings-panel" hidden>
+        <div class="settings-panel-header">
+          <h2>Settings</h2>
+          <button id="closeSettingsButton" type="button" aria-label="Close settings">×</button>
+        </div>
+
+        <label class="switch-row">
+          <span>
+            <strong>Show bases on map</strong>
+            <small>Display player and virtual rival base markers.</small>
+          </span>
+          <input id="showBasesToggle" type="checkbox">
+        </label>
+      </section>
 
       <div id="map" aria-label="Operations world map"></div>
     </main>

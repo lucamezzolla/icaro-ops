@@ -195,7 +195,7 @@ body {
 .map-search {
   position: absolute;
   top: 56px;
-  left: 16px;
+  right: 16px;
   z-index: 650;
   width: min(520px, calc(100% - 32px));
   display: grid;
@@ -219,10 +219,14 @@ body {
 }
 
 .map-search button {
-  color: #07101d;
-  background: linear-gradient(135deg, var(--accent), var(--good));
+  color: var(--text);
+  background: var(--blue);
   font-weight: 800;
   cursor: pointer;
+}
+
+.map-search button:hover {
+  background: var(--blue-dark);
 }
 
 .search-results {
@@ -252,9 +256,7 @@ body {
 }
 
 .search-result strong,
-.search-result span {
-  display: block;
-}
+.search-result span { display: block; }
 
 .search-result span {
   margin-top: 3px;
@@ -330,4 +332,142 @@ body {
   .app-layout { grid-template-columns: 1fr; }
   .sidebar { display: none; }
   .topbar a { min-width: auto; padding: 0 12px; }
+  .map-search {
+    left: 16px;
+    right: 16px;
+    width: auto;
+  }
+}
+
+/* Equal visible base marker sizes. */
+.hq-marker,
+.rival-base-marker {
+  width: 38px;
+  height: 38px;
+}
+
+.rival-base-marker svg {
+  width: 22px;
+  height: 22px;
+}
+
+.settings-panel {
+  position: absolute;
+  top: 56px;
+  right: 16px;
+  z-index: 680;
+  width: min(360px, calc(100% - 32px));
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 18px;
+  background: rgba(7, 16, 29, 0.94);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 42px rgba(0,0,0,0.34);
+}
+
+.settings-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.settings-panel h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.settings-panel-header button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  color: var(--text);
+  background: var(--blue);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--text);
+}
+
+.switch-row span {
+  display: grid;
+  gap: 3px;
+}
+
+.switch-row small {
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.switch-row input {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 52px;
+  height: 30px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.24);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.switch-row input::before {
+  content: "";
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  top: 2px;
+  left: 2px;
+  border-radius: 50%;
+  background: #ffffff;
+  transition: transform 0.18s ease;
+}
+
+.switch-row input:checked {
+  background: var(--blue);
+}
+
+.switch-row input:checked::before {
+  transform: translateX(22px);
+}
+
+/* Distinct base marker colors. */
+.hq-marker {
+  background: linear-gradient(135deg, #73d7ff, #9ff0c2);
+}
+
+.rival-base-marker {
+  background: linear-gradient(135deg, #ffb15f, #ff5f5f);
+}
+
+.other-player-base-marker {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.36);
+  background: linear-gradient(135deg, #c9a8ff, #78a8ff);
+}
+
+.other-player-base-marker svg {
+  width: 22px;
+  height: 22px;
+  fill: #07101d;
+}
+
+.topbar a.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }

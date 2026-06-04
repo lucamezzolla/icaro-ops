@@ -1,6 +1,6 @@
 const API = {
   currentCompany: companyId => `api/public/company/current.php?companyId=${encodeURIComponent(companyId)}`,
-  rivalBases: companyId => `api/public/rivals/bases.php?companyId=${encodeURIComponent(companyId)}`,
+  visibleBases: "api/public/map/bases.php",
   airportSearch: query => `api/public/airports/search.php?q=${encodeURIComponent(query)}`
 };
 
@@ -9,26 +9,32 @@ const DEFAULT_WORLD_BOUNDS = L.latLngBounds(
   L.latLng(76, 170)
 );
 
+const SAME_AIRPORT_MARKER_OFFSET_METERS = 180;
+const SETTINGS_SHOW_BASES_KEY = "icaro_ops_show_bases_on_map";
+
 let map;
-let hqLayer;
-let rivalLayer;
+let baseLayer;
 let searchLayer;
+let currentCompanyId = null;
+let visibleBasesCache = [];
+let showBasesOnMap = true;
 
 document.addEventListener("DOMContentLoaded", async () => {
   startUtcClock();
+  initSettingsState();
   initMap();
   bindAirportSearch();
+  bindSettingsPanel();
 
-  const companyId = resolveCompanyId();
+  currentCompanyId = resolveCompanyId();
 
-  if (!companyId) {
-    setCompanySummaryError("No company found. Create a company first.");
-    fitWorldSafely();
-    return;
-  }
-
-  await loadDashboard(companyId);
+  await loadOperationsMap(currentCompanyId);
 });
+
+function initSettingsState() {
+  const stored = localStorage.getItem(SETTINGS_SHOW_BASES_KEY);
+  showBasesOnMap = stored === null ? true : stored === "true";
+}
 
 function initMap() {
   map = L.map("map", {
@@ -48,9 +54,12 @@ function initMap() {
     attribution: "&copy; OpenStreetMap contributors"
   }).addTo(map);
 
-  hqLayer = L.layerGroup().addTo(map);
-  rivalLayer = L.layerGroup().addTo(map);
+  baseLayer = L.layerGroup();
   searchLayer = L.layerGroup().addTo(map);
+
+  if (showBasesOnMap) {
+    baseLayer.addTo(map);
+  }
 
   fitWorldSafely();
 
@@ -64,25 +73,291 @@ function initMap() {
   setTimeout(() => map.invalidateSize({ animate: false }), 1000);
 }
 
-async function loadDashboard(companyId) {
+async function loadOperationsMap(companyId) {
   try {
-    const company = await getJson(API.currentCompany(companyId));
-    renderCompany(company);
-    renderHqMarker(company);
-    await renderRivalBases(companyId);
+    visibleBasesCache = await getJson(API.visibleBases);
+    const ownBase = companyId ? visibleBasesCache.find(base =>
+      base.base_owner_type === "PLAYER" && String(base.company_id) === String(companyId)
+    ) || null : null;
 
-    const airport = company.base_airport;
+    renderVisibleBases(visibleBasesCache, companyId);
 
-    if (airport?.latitude && airport?.longitude) {
-      map.invalidateSize({ animate: false });
-      map.setView([Number(airport.latitude), Number(airport.longitude)], 6);
+    if (showBasesOnMap) {
+      fitMapToVisibleBases(visibleBasesCache);
     } else {
       fitWorldSafely();
     }
+
+    if (ownBase) {
+      renderSelectedBase(ownBase);
+    } else if (companyId) {
+      await loadAndRenderCompanyFallback(companyId);
+    } else if (visibleBasesCache.length > 0) {
+      renderSelectedBase(visibleBasesCache[0]);
+    } else {
+      setCompanySummaryError("No visible bases yet. Create a company first.");
+    }
+
   } catch (error) {
-    setCompanySummaryError("Unable to load company. Check API, PHP and MySQL configuration.");
+    setCompanySummaryError("Unable to load visible bases. Check API, PHP and MySQL configuration.");
     fitWorldSafely();
   }
+}
+
+async function loadAndRenderCompanyFallback(companyId) {
+  try {
+    const company = await getJson(API.currentCompany(companyId));
+    renderCompanyFallback(company);
+  } catch {
+    setCompanySummaryError("Company not found. Create a company first.");
+  }
+}
+
+
+function bindSettingsPanel() {
+  const settingsLink = document.querySelector("#settingsNavLink");
+  const settingsPanel = document.querySelector("#settingsPanel");
+  const closeSettingsButton = document.querySelector("#closeSettingsButton");
+  const showBasesToggle = document.querySelector("#showBasesToggle");
+
+  if (!settingsLink || !settingsPanel || !showBasesToggle) {
+    return;
+  }
+
+  showBasesToggle.checked = showBasesOnMap;
+
+  settingsLink.addEventListener("click", event => {
+    event.preventDefault();
+    settingsPanel.hidden = !settingsPanel.hidden;
+  });
+
+  if (closeSettingsButton) {
+    closeSettingsButton.addEventListener("click", () => {
+      settingsPanel.hidden = true;
+    });
+  }
+
+  showBasesToggle.addEventListener("change", () => {
+    showBasesOnMap = showBasesToggle.checked;
+    localStorage.setItem(SETTINGS_SHOW_BASES_KEY, String(showBasesOnMap));
+
+    applyBaseLayerVisibility();
+
+    if (showBasesOnMap && visibleBasesCache.length > 0) {
+      fitMapToVisibleBases(visibleBasesCache);
+    }
+  });
+}
+
+function applyBaseLayerVisibility() {
+  if (!baseLayer || !map) {
+    return;
+  }
+
+  if (showBasesOnMap) {
+    if (!map.hasLayer(baseLayer)) {
+      baseLayer.addTo(map);
+    }
+  } else if (map.hasLayer(baseLayer)) {
+    map.removeLayer(baseLayer);
+  }
+}
+
+function renderVisibleBases(bases, companyId) {
+  baseLayer.clearLayers();
+
+  const basesByAirport = groupBasesByAirport(bases);
+
+  for (const airportBases of basesByAirport.values()) {
+    const positionedBases = calculateBaseMarkerPositions(airportBases);
+
+    for (const base of positionedBases) {
+      renderBaseMarker(base, companyId);
+    }
+  }
+
+  applyBaseLayerVisibility();
+}
+
+function groupBasesByAirport(bases) {
+  const mapByAirport = new Map();
+
+  for (const base of bases) {
+    if (!base.latitude || !base.longitude) {
+      continue;
+    }
+
+    const key = base.icao_code || `${base.latitude},${base.longitude}`;
+
+    if (!mapByAirport.has(key)) {
+      mapByAirport.set(key, []);
+    }
+
+    mapByAirport.get(key).push({
+      ...base,
+      latitude: Number(base.latitude),
+      longitude: Number(base.longitude)
+    });
+  }
+
+  return mapByAirport;
+}
+
+function calculateBaseMarkerPositions(bases) {
+  if (bases.length <= 1) {
+    return bases.map(base => ({
+      ...base,
+      markerLatitude: base.latitude,
+      markerLongitude: base.longitude,
+      markerOffsetLabel: null
+    }));
+  }
+
+  const count = bases.length;
+  const angleStep = (Math.PI * 2) / count;
+
+  return bases.map((base, index) => {
+    const startAngle = -Math.PI / 2;
+    const angle = startAngle + index * angleStep;
+    const offset = offsetLatLng(base.latitude, base.longitude, SAME_AIRPORT_MARKER_OFFSET_METERS, angle);
+
+    return {
+      ...base,
+      markerLatitude: offset.latitude,
+      markerLongitude: offset.longitude,
+      markerOffsetLabel: `same airport marker ${index + 1}/${count}`
+    };
+  });
+}
+
+function offsetLatLng(latitude, longitude, meters, angleRadians) {
+  const earthRadiusMeters = 6378137;
+  const deltaLat = (meters * Math.sin(angleRadians)) / earthRadiusMeters;
+  const deltaLng = (meters * Math.cos(angleRadians)) / (earthRadiusMeters * Math.cos(latitude * Math.PI / 180));
+
+  return {
+    latitude: latitude + deltaLat * 180 / Math.PI,
+    longitude: longitude + deltaLng * 180 / Math.PI
+  };
+}
+
+function renderBaseMarker(base, companyId) {
+  const isOwn = base.base_owner_type === "PLAYER" && String(base.company_id) === String(companyId);
+  const markerClass = isOwn ? "hq-marker" : base.base_owner_type === "RIVAL" ? "rival-base-marker" : "other-player-base-marker";
+  const title = isOwn ? `${base.company_name} HQ` : `${base.company_name} base`;
+
+  const marker = L.marker([base.markerLatitude, base.markerLongitude], {
+    icon: L.divIcon({
+      className: "",
+      html: hqIconSvg(markerClass),
+      iconSize: [38, 38],
+      iconAnchor: [19, 19],
+      popupAnchor: [0, -18]
+    }),
+    title
+  });
+
+  marker.bindPopup(buildBasePopup(base, isOwn));
+
+  marker.on("click", () => {
+    renderSelectedBase(base);
+  });
+
+  marker.addTo(baseLayer);
+}
+
+function buildBasePopup(base, isOwn) {
+  const typeLabel = isOwn ? "Your HQ" : base.base_owner_type === "RIVAL" ? "Virtual rival" : "Player company";
+
+  return `
+    <div class="base-popup">
+      <h3>${escapeHtml(base.company_name)} ${isOwn ? "HQ" : "Base"}</h3>
+      <p><strong>Type:</strong> ${escapeHtml(typeLabel)}</p>
+      <p><strong>Owner:</strong> ${escapeHtml(base.owner_name || "-")}</p>
+      <p><strong>${escapeHtml(base.icao_code)}${base.iata_code ? " / " + escapeHtml(base.iata_code) : ""}</strong></p>
+      <p>${escapeHtml(base.airport_name)}</p>
+      <p>${escapeHtml(base.city || base.location_name || "")}, ${escapeHtml(base.country_name)}</p>
+      ${base.markerOffsetLabel ? `<p><em>Marker slightly offset because multiple bases share this airport.</em></p>` : ""}
+      <dl>
+        <dt>Size</dt><dd>${escapeHtml(base.airport_size_tier || "-")}</dd>
+        <dt>Base slots</dt><dd>${escapeHtml(base.max_total_bases ?? "-")}</dd>
+        <dt>Difficulty</dt><dd>${escapeHtml(base.starting_difficulty || "-")}</dd>
+        <dt>Passenger potential</dt><dd>${safeScore(base.local_passenger_demand_score)}</dd>
+        <dt>Cargo potential</dt><dd>${safeScore(base.local_cargo_demand_score)}</dd>
+      </dl>
+    </div>
+  `;
+}
+
+function fitMapToVisibleBases(bases) {
+  const points = bases
+    .filter(base => base.latitude && base.longitude)
+    .map(base => [Number(base.latitude), Number(base.longitude)]);
+
+  map.invalidateSize({ animate: false });
+
+  if (points.length === 0) {
+    fitWorldSafely();
+    return;
+  }
+
+  if (points.length === 1) {
+    map.setView(points[0], 8);
+    return;
+  }
+
+  const bounds = L.latLngBounds(points);
+  map.fitBounds(bounds, {
+    padding: [90, 90],
+    maxZoom: 9,
+    animate: false
+  });
+}
+
+function renderSelectedBase(base) {
+  document.querySelector("#companySummary").innerHTML = `
+    ${summaryRow("Selected", base.base_owner_type === "RIVAL" ? "Virtual rival base" : base.base_owner_type === "PLAYER" ? "Player base" : "Base")}
+    ${summaryRow("Owner", base.owner_name)}
+    ${summaryRow("Company", base.company_name)}
+    ${summaryRow("Reputation", base.reputation_score)}
+    ${base.currency_code ? summaryRow("Budget", `${base.budget_amount} ${base.currency_code}`) : ""}
+    ${summaryRow("Base", `${base.icao_code}${base.iata_code ? " / " + base.iata_code : ""}`)}
+    ${summaryRow("Airport", base.airport_name)}
+    ${summaryRow("Country", base.country_name)}
+    ${summaryRow("Airport size", base.airport_size_tier)}
+    ${summaryRow("Max bases", base.max_total_bases)}
+  `;
+
+  renderMarketSummary(base);
+}
+
+function renderCompanyFallback(company) {
+  const airport = company.base_airport;
+
+  document.querySelector("#companySummary").innerHTML = `
+    ${summaryRow("Owner", company.owner_name)}
+    ${summaryRow("Company", company.company_name)}
+    ${summaryRow("Budget", `${company.budget_amount} ${company.currency_code}`)}
+    ${summaryRow("Reputation", company.reputation_score)}
+    ${summaryRow("Base", `${airport.icao_code}${airport.iata_code ? " / " + airport.iata_code : ""}`)}
+    ${summaryRow("Airport", airport.airport_name)}
+    ${summaryRow("Country", airport.country_name)}
+  `;
+
+  renderMarketSummary(airport);
+}
+
+function renderMarketSummary(base) {
+  const rows = [
+    ["Passenger potential", base.local_passenger_demand_score],
+    ["Cargo potential", base.local_cargo_demand_score],
+    ["Tourism potential", base.tourism_score],
+    ["Business potential", base.business_score],
+    ["Competition pressure", base.competition_score],
+    ["Airport fees level", base.airport_fee_score],
+  ];
+
+  document.querySelector("#marketSummary").innerHTML = rows.map(([label, value]) => metricRow(label, value)).join("");
 }
 
 function bindAirportSearch() {
@@ -90,9 +365,7 @@ function bindAirportSearch() {
   const input = document.querySelector("#airportSearchInput");
   const results = document.querySelector("#airportSearchResults");
 
-  if (!form || !input || !results) {
-    return;
-  }
+  if (!form || !input || !results) return;
 
   form.addEventListener("submit", async event => {
     event.preventDefault();
@@ -212,108 +485,6 @@ function resolveCompanyId() {
     return parsed.company_id || null;
   } catch {
     return null;
-  }
-}
-
-function renderCompany(company) {
-  const airport = company.base_airport;
-  document.querySelector("#companySummary").innerHTML = `
-    ${summaryRow("Company", company.company_name)}
-    ${summaryRow("Budget", `${company.budget_amount} ${company.currency_code}`)}
-    ${summaryRow("Reputation", company.reputation_score)}
-    ${summaryRow("Base", `${airport.icao_code}${airport.iata_code ? " / " + airport.iata_code : ""}`)}
-    ${summaryRow("Airport", airport.airport_name)}
-    ${summaryRow("Country", airport.country_name)}
-  `;
-
-  renderMarketSummary(airport);
-}
-
-function renderMarketSummary(airport) {
-  const rows = [
-    ["Passengers", airport.local_passenger_demand_score],
-    ["Cargo", airport.local_cargo_demand_score],
-    ["Tourism", airport.tourism_score],
-    ["Business", airport.business_score],
-    ["Competition", airport.competition_score],
-    ["Airport fees", airport.airport_fee_score],
-  ];
-
-  document.querySelector("#marketSummary").innerHTML = rows.map(([label, value]) => metricRow(label, value)).join("");
-}
-
-function renderHqMarker(company) {
-  hqLayer.clearLayers();
-
-  const airport = company.base_airport;
-
-  if (!airport?.latitude || !airport?.longitude) return;
-
-  const marker = L.marker([Number(airport.latitude), Number(airport.longitude)], {
-    icon: L.divIcon({
-      className: "",
-      html: hqIconSvg("hq-marker"),
-      iconSize: [38, 38],
-      iconAnchor: [19, 19],
-      popupAnchor: [0, -18]
-    }),
-    title: `${company.company_name} HQ`
-  });
-
-  marker.bindPopup(`
-    <div class="base-popup">
-      <h3>${escapeHtml(company.company_name)} HQ</h3>
-      <p><strong>${escapeHtml(airport.icao_code)}${airport.iata_code ? " / " + escapeHtml(airport.iata_code) : ""}</strong></p>
-      <p>${escapeHtml(airport.airport_name)}</p>
-      <p>${escapeHtml(airport.city || airport.location_name || "")}, ${escapeHtml(airport.country_name)}</p>
-      <dl>
-        <dt>Difficulty</dt><dd>${escapeHtml(airport.starting_difficulty || "-")}</dd>
-        <dt>Passengers</dt><dd>${safeScore(airport.local_passenger_demand_score)}</dd>
-        <dt>Cargo</dt><dd>${safeScore(airport.local_cargo_demand_score)}</dd>
-        <dt>Fees</dt><dd>${safeScore(airport.airport_fee_score)}</dd>
-      </dl>
-    </div>
-  `);
-
-  marker.addTo(hqLayer);
-}
-
-async function renderRivalBases(companyId) {
-  rivalLayer.clearLayers();
-
-  try {
-    const rivals = await getJson(API.rivalBases(companyId));
-
-    for (const rival of rivals) {
-      if (!rival.latitude || !rival.longitude) continue;
-
-      const marker = L.marker([Number(rival.latitude), Number(rival.longitude)], {
-        icon: L.divIcon({
-          className: "",
-          html: hqIconSvg("rival-base-marker"),
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
-          popupAnchor: [0, -14]
-        }),
-        title: `${rival.company_name} base`
-      });
-
-      marker.bindPopup(`
-        <div class="base-popup">
-          <h3>${escapeHtml(rival.company_name)}</h3>
-          <p><strong>${escapeHtml(rival.icao_code)}</strong> · ${escapeHtml(rival.airport_name)}</p>
-          <p>${escapeHtml(rival.city || rival.location_name || "")}, ${escapeHtml(rival.country_name)}</p>
-          <dl>
-            <dt>Reputation</dt><dd>${escapeHtml(rival.reputation_score ?? "-")}</dd>
-            <dt>Market</dt><dd>${escapeHtml(rival.starting_difficulty || "-")}</dd>
-          </dl>
-        </div>
-      `);
-
-      marker.addTo(rivalLayer);
-    }
-  } catch {
-    // Optional for now.
   }
 }
 

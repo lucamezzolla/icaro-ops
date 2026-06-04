@@ -12,7 +12,7 @@
       <p class="eyebrow">Icaro Ops</p>
       <h1>Create your airline</h1>
       <p>
-        Choose your identity and starting base. Your base will affect local offers,
+        Choose your identity and starting base. Your base will affect local offer potential,
         airport fees, competition, passenger demand and cargo opportunities.
       </p>
     </section>
@@ -22,18 +22,23 @@
         <div class="section-title">
           <span>1</span>
           <div>
-            <h2>Company setup</h2>
-            <p>These settings define the airline profile shown in game.</p>
+            <h2>Owner and company</h2>
+            <p>Your name will be shown as the owner of your base.</p>
           </div>
         </div>
 
         <div class="form-grid">
           <label>
-            Nickname
-            <input id="nickname" name="nickname" required maxlength="40" placeholder="e.g. SkyFox">
+            First name
+            <input id="firstName" name="firstName" required maxlength="60" placeholder="e.g. Marco">
           </label>
 
           <label>
+            Last name
+            <input id="lastName" name="lastName" required maxlength="60" placeholder="e.g. Rossi">
+          </label>
+
+          <label class="wide">
             Company name
             <input id="companyName" name="companyName" required maxlength="80" placeholder="e.g. Aurora Regional">
           </label>
@@ -74,8 +79,8 @@
         </div>
 
         <div class="notice">
-          The starting base determines your first local offers: short passenger flights,
-          light cargo, tourism, private transfers, fees and local competition.
+          The starting base determines your first local offer potential: short passenger flights,
+          light cargo, tourism, private transfers, fees and virtual competitor pressure.
         </div>
 
         <div class="form-grid">
@@ -106,14 +111,14 @@
         <div class="section-title">
           <span>3</span>
           <div>
-            <h2>Local market preview</h2>
-            <p>Review the expected early-game conditions before confirming.</p>
+            <h2>Local market potential</h2>
+            <p>These are potential scores, not actual passengers or cargo already owned by your company.</p>
           </div>
         </div>
 
         <article id="marketPreview" class="market-preview empty">
           <h3>No airport selected</h3>
-          <p>Choose a starting airport to see local demand, costs and difficulty.</p>
+          <p>Choose a starting airport to see local demand potential, costs and difficulty.</p>
         </article>
       </section>
 

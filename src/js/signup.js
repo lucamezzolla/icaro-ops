@@ -150,7 +150,7 @@ function renderEmptyPreview() {
   marketPreview.className = "market-preview empty";
   marketPreview.innerHTML = `
     <h3>No airport selected</h3>
-    <p>Choose a starting airport to see local demand, costs and difficulty.</p>
+    <p>Choose a starting airport to see local demand potential, costs and difficulty.</p>
   `;
 }
 
@@ -171,12 +171,12 @@ function renderMarketPreview(airport) {
     </p>
 
     <div class="market-grid">
-      ${metric("Passengers", airport.local_passenger_demand_score)}
-      ${metric("Cargo", airport.local_cargo_demand_score)}
-      ${metric("Tourism", airport.tourism_score)}
-      ${metric("Business", airport.business_score)}
-      ${metric("Competition", airport.competition_score)}
-      ${metric("Airport fees", airport.airport_fee_score)}
+      ${metric("Passenger potential", airport.local_passenger_demand_score)}
+      ${metric("Cargo potential", airport.local_cargo_demand_score)}
+      ${metric("Tourism potential", airport.tourism_score)}
+      ${metric("Business potential", airport.business_score)}
+      ${metric("Competition pressure", airport.competition_score)}
+      ${metric("Airport fees level", airport.airport_fee_score)}
     </div>
   `;
 }
@@ -201,7 +201,8 @@ async function submitSignup(event) {
   }
 
   const payload = {
-    nickname: $("#nickname").value.trim(),
+    first_name: $("#firstName").value.trim(),
+    last_name: $("#lastName").value.trim(),
     company_name: $("#companyName").value.trim(),
     interface_language: $("#interfaceLanguage").value,
     currency_code: $("#currencyCode").value,

@@ -9,7 +9,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $payload = read_json_body();
 
-$nickname = require_string($payload, 'nickname', 3, 40);
+$firstName = require_string($payload, 'first_name', 2, 60);
+$lastName = require_string($payload, 'last_name', 2, 60);
 $companyName = require_string($payload, 'company_name', 3, 80);
 $language = require_enum($payload, 'interface_language', ['it', 'en', 'es', 'pt', 'fr']);
 $currency = require_enum($payload, 'currency_code', ['EUR', 'USD']);
@@ -41,16 +42,58 @@ try {
         ], 422);
     }
 
+    $capacityStmt = $pdo->prepare("
+        SELECT
+          COALESCE(acp.max_total_bases, 1) AS max_total_bases,
+          (
+            SELECT COUNT(*)
+            FROM companies co
+            WHERE co.base_airport_icao_code = :player_airport
+          ) +
+          (
+            SELECT COUNT(*)
+            FROM rival_company_bases rb
+            WHERE rb.airport_icao_code = :rival_airport
+          ) AS used_bases
+        FROM airports a
+        LEFT JOIN airport_capacity_profiles acp
+          ON acp.airport_icao_code = a.icao_code
+        WHERE a.icao_code = :airport
+        LIMIT 1
+    ");
+    $capacityStmt->execute([
+        'player_airport' => $baseAirportIcao,
+        'rival_airport' => $baseAirportIcao,
+        'airport' => $baseAirportIcao,
+    ]);
+    $capacity = $capacityStmt->fetch();
+
+    if ($capacity && (int)$capacity['used_bases'] >= (int)$capacity['max_total_bases']) {
+        $pdo->rollBack();
+        json_response([
+            'error' => 'AIRPORT_BASE_CAPACITY_FULL',
+            'message' => 'This airport has no free base slots.',
+        ], 409);
+    }
+
+    $nickname = trim($firstName . ' ' . $lastName);
+
     $playerStmt = $pdo->prepare("
         INSERT INTO players (
+          first_name,
+          last_name,
           nickname,
           interface_language
         ) VALUES (
+          :first_name,
+          :last_name,
           :nickname,
           :interface_language
         )
     ");
     $playerStmt->execute([
+        'first_name' => $firstName,
+        'last_name' => $lastName,
         'nickname' => $nickname,
         'interface_language' => $language,
     ]);
@@ -101,7 +144,9 @@ try {
     json_response([
         'player_id' => $playerId,
         'company_id' => $companyId,
-        'nickname' => $nickname,
+        'owner_name' => $nickname,
+        'first_name' => $firstName,
+        'last_name' => $lastName,
         'company_name' => $companyName,
         'currency_code' => $currency,
         'budget_amount' => '0.00',
@@ -118,7 +163,7 @@ try {
     if ($sqlState === '23000' || $driverCode === 1062) {
         json_response([
             'error' => 'DUPLICATE_VALUE',
-            'message' => 'Nickname or company name already exists.',
+            'message' => 'Owner name or company name already exists.',
         ], 409);
     }
 
