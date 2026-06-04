@@ -1,24 +1,29 @@
 const API = {
   currentCompany: companyId => `api/public/company/current.php?companyId=${encodeURIComponent(companyId)}`,
-  rivalBases: companyId => `api/public/rivals/bases.php?companyId=${encodeURIComponent(companyId)}`
+  rivalBases: companyId => `api/public/rivals/bases.php?companyId=${encodeURIComponent(companyId)}`,
+  airportSearch: query => `api/public/airports/search.php?q=${encodeURIComponent(query)}`
 };
 
-const DEFAULT_WORLD_CENTER = [20, 10];
-const DEFAULT_WORLD_ZOOM = 3;
-const MIN_WORLD_ZOOM = 2;
+const DEFAULT_WORLD_BOUNDS = L.latLngBounds(
+  L.latLng(-58, -170),
+  L.latLng(76, 170)
+);
 
 let map;
 let hqLayer;
 let rivalLayer;
+let searchLayer;
 
 document.addEventListener("DOMContentLoaded", async () => {
   startUtcClock();
   initMap();
+  bindAirportSearch();
 
   const companyId = resolveCompanyId();
 
   if (!companyId) {
     setCompanySummaryError("No company found. Create a company first.");
+    fitWorldSafely();
     return;
   }
 
@@ -28,17 +33,35 @@ document.addEventListener("DOMContentLoaded", async () => {
 function initMap() {
   map = L.map("map", {
     worldCopyJump: true,
-    minZoom: MIN_WORLD_ZOOM,
-    zoomControl: true
-  }).setView(DEFAULT_WORLD_CENTER, DEFAULT_WORLD_ZOOM);
+    minZoom: 2,
+    maxZoom: 18,
+    zoomControl: true,
+    attributionControl: true
+  });
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 18,
+    noWrap: false,
+    updateWhenIdle: true,
+    updateWhenZooming: false,
+    keepBuffer: 4,
     attribution: "&copy; OpenStreetMap contributors"
   }).addTo(map);
 
   hqLayer = L.layerGroup().addTo(map);
   rivalLayer = L.layerGroup().addTo(map);
+  searchLayer = L.layerGroup().addTo(map);
+
+  fitWorldSafely();
+
+  window.addEventListener("resize", () => {
+    map.invalidateSize({ animate: false });
+  });
+
+  requestAnimationFrame(() => map.invalidateSize({ animate: false }));
+  setTimeout(() => map.invalidateSize({ animate: false }), 150);
+  setTimeout(() => map.invalidateSize({ animate: false }), 500);
+  setTimeout(() => map.invalidateSize({ animate: false }), 1000);
 }
 
 async function loadDashboard(companyId) {
@@ -49,27 +72,140 @@ async function loadDashboard(companyId) {
     await renderRivalBases(companyId);
 
     const airport = company.base_airport;
+
     if (airport?.latitude && airport?.longitude) {
-      map.setView([Number(airport.latitude), Number(airport.longitude)], 7);
+      map.invalidateSize({ animate: false });
+      map.setView([Number(airport.latitude), Number(airport.longitude)], 6);
+    } else {
+      fitWorldSafely();
     }
   } catch (error) {
     setCompanySummaryError("Unable to load company. Check API, PHP and MySQL configuration.");
+    fitWorldSafely();
   }
+}
+
+function bindAirportSearch() {
+  const form = document.querySelector("#airportSearchForm");
+  const input = document.querySelector("#airportSearchInput");
+  const results = document.querySelector("#airportSearchResults");
+
+  if (!form || !input || !results) {
+    return;
+  }
+
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+
+    const query = input.value.trim();
+
+    if (query.length < 2) {
+      renderSearchMessage("Type at least 2 characters.");
+      return;
+    }
+
+    try {
+      const rows = await getJson(API.airportSearch(query));
+      renderAirportSearchResults(rows);
+    } catch {
+      renderSearchMessage("Search unavailable. Check API/PHP/MySQL.");
+    }
+  });
+
+  document.addEventListener("click", event => {
+    if (!form.contains(event.target)) {
+      results.hidden = true;
+    }
+  });
+}
+
+function renderAirportSearchResults(rows) {
+  const results = document.querySelector("#airportSearchResults");
+  results.hidden = false;
+
+  if (!rows.length) {
+    results.innerHTML = `<div class="search-result"><strong>No airports found</strong><span>Try ICAO, IATA, city or airport name.</span></div>`;
+    return;
+  }
+
+  results.innerHTML = rows.map((airport, index) => `
+    <button type="button" class="search-result" data-index="${index}">
+      <strong>${escapeHtml(airport.icao_code)}${airport.iata_code ? " / " + escapeHtml(airport.iata_code) : ""} · ${escapeHtml(airport.airport_name)}</strong>
+      <span>${escapeHtml(airport.city || airport.location_name || "Unknown location")} · ${escapeHtml(airport.country_name)} · ${escapeHtml(airport.world_region_name)}</span>
+    </button>
+  `).join("");
+
+  results.querySelectorAll(".search-result[data-index]").forEach(button => {
+    button.addEventListener("click", () => {
+      const airport = rows[Number(button.dataset.index)];
+      flyToSearchedAirport(airport);
+      results.hidden = true;
+    });
+  });
+}
+
+function renderSearchMessage(message) {
+  const results = document.querySelector("#airportSearchResults");
+  results.hidden = false;
+  results.innerHTML = `<div class="search-result"><strong>${escapeHtml(message)}</strong></div>`;
+}
+
+function flyToSearchedAirport(airport) {
+  if (!airport.latitude || !airport.longitude) {
+    renderSearchMessage("Airport found, but coordinates are missing.");
+    return;
+  }
+
+  searchLayer.clearLayers();
+
+  const latLng = [Number(airport.latitude), Number(airport.longitude)];
+
+  const marker = L.marker(latLng, {
+    icon: L.divIcon({
+      className: "",
+      html: airportIconSvg("search-airport-marker"),
+      iconSize: [34, 34],
+      iconAnchor: [17, 17],
+      popupAnchor: [0, -16]
+    })
+  });
+
+  marker.bindPopup(`
+    <div class="base-popup">
+      <h3>${escapeHtml(airport.airport_name)}</h3>
+      <p><strong>${escapeHtml(airport.icao_code)}${airport.iata_code ? " / " + escapeHtml(airport.iata_code) : ""}</strong></p>
+      <p>${escapeHtml(airport.city || airport.location_name || "")}, ${escapeHtml(airport.country_name)}</p>
+      <dl>
+        <dt>Type</dt><dd>${escapeHtml(airport.airport_type || "-")}</dd>
+        <dt>Service</dt><dd>${escapeHtml(airport.service_category || "-")}</dd>
+        <dt>Closed</dt><dd>${airport.is_closed ? "Yes" : "No"}</dd>
+      </dl>
+    </div>
+  `);
+
+  marker.addTo(searchLayer);
+  map.setView(latLng, 11);
+  marker.openPopup();
+}
+
+function fitWorldSafely() {
+  if (!map) return;
+
+  map.invalidateSize({ animate: false });
+  map.fitBounds(DEFAULT_WORLD_BOUNDS, {
+    padding: [20, 20],
+    animate: false
+  });
 }
 
 function resolveCompanyId() {
   const params = new URLSearchParams(window.location.search);
   const fromQuery = params.get("companyId");
 
-  if (fromQuery) {
-    return fromQuery;
-  }
+  if (fromQuery) return fromQuery;
 
   const raw = sessionStorage.getItem("icaro_ops_company");
-
-  if (!raw) {
-    return null;
-  }
+  if (!raw) return null;
 
   try {
     const parsed = JSON.parse(raw);
@@ -103,9 +239,7 @@ function renderMarketSummary(airport) {
     ["Airport fees", airport.airport_fee_score],
   ];
 
-  document.querySelector("#marketSummary").innerHTML = rows
-    .map(([label, value]) => metricRow(label, value))
-    .join("");
+  document.querySelector("#marketSummary").innerHTML = rows.map(([label, value]) => metricRow(label, value)).join("");
 }
 
 function renderHqMarker(company) {
@@ -113,23 +247,18 @@ function renderHqMarker(company) {
 
   const airport = company.base_airport;
 
-  if (!airport?.latitude || !airport?.longitude) {
-    return;
-  }
+  if (!airport?.latitude || !airport?.longitude) return;
 
-  const marker = L.marker(
-    [Number(airport.latitude), Number(airport.longitude)],
-    {
-      icon: L.divIcon({
-        className: "",
-        html: hqIconSvg("hq-marker"),
-        iconSize: [38, 38],
-        iconAnchor: [19, 19],
-        popupAnchor: [0, -18]
-      }),
-      title: `${company.company_name} HQ`
-    }
-  );
+  const marker = L.marker([Number(airport.latitude), Number(airport.longitude)], {
+    icon: L.divIcon({
+      className: "",
+      html: hqIconSvg("hq-marker"),
+      iconSize: [38, 38],
+      iconAnchor: [19, 19],
+      popupAnchor: [0, -18]
+    }),
+    title: `${company.company_name} HQ`
+  });
 
   marker.bindPopup(`
     <div class="base-popup">
@@ -156,23 +285,18 @@ async function renderRivalBases(companyId) {
     const rivals = await getJson(API.rivalBases(companyId));
 
     for (const rival of rivals) {
-      if (!rival.latitude || !rival.longitude) {
-        continue;
-      }
+      if (!rival.latitude || !rival.longitude) continue;
 
-      const marker = L.marker(
-        [Number(rival.latitude), Number(rival.longitude)],
-        {
-          icon: L.divIcon({
-            className: "",
-            html: hqIconSvg("rival-base-marker"),
-            iconSize: [28, 28],
-            iconAnchor: [14, 14],
-            popupAnchor: [0, -14]
-          }),
-          title: `${rival.company_name} base`
-        }
-      );
+      const marker = L.marker([Number(rival.latitude), Number(rival.longitude)], {
+        icon: L.divIcon({
+          className: "",
+          html: hqIconSvg("rival-base-marker"),
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+          popupAnchor: [0, -14]
+        }),
+        title: `${rival.company_name} base`
+      });
 
       marker.bindPopup(`
         <div class="base-popup">
@@ -189,7 +313,7 @@ async function renderRivalBases(companyId) {
       marker.addTo(rivalLayer);
     }
   } catch {
-    // Rivals are optional for now.
+    // Optional for now.
   }
 }
 
@@ -224,6 +348,16 @@ function hqIconSvg(className) {
   `;
 }
 
+function airportIconSvg(className) {
+  return `
+    <div class="${className}">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5Z"/>
+      </svg>
+    </div>
+  `;
+}
+
 function setCompanySummaryError(message) {
   document.querySelector("#companySummary").innerHTML = `
     <div>
@@ -238,7 +372,7 @@ function startUtcClock() {
 
   function tick() {
     const now = new Date();
-    clock.textContent = now.toISOString().slice(11, 19) + " UTC";
+    clock.textContent = now.toISOString().replace("T", " ").slice(0, 19) + " UTC";
   }
 
   tick();
@@ -247,9 +381,7 @@ function startUtcClock() {
 
 async function getJson(url) {
   const response = await fetch(url, {
-    headers: {
-      "Accept": "application/json"
-    }
+    headers: { "Accept": "application/json" }
   });
 
   if (!response.ok) {

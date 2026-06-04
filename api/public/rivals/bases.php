@@ -3,13 +3,6 @@ declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
 
-/*
- * Temporary public rival-base endpoint.
- *
- * It returns limited public info only. Later this should respect visibility,
- * fog-of-war, discovered markets, authentication and rate limits.
- */
-
 $companyId = filter_input(INPUT_GET, 'companyId', FILTER_VALIDATE_INT);
 
 if (!$companyId) {
@@ -41,7 +34,7 @@ $stmt = db()->prepare("
 
 $stmt->execute(['company_id' => $companyId]);
 
-$rows = array_map(static function (array $row): array {
+json_response(array_map(static function (array $row): array {
     return [
         'company_id' => (int)$row['company_id'],
         'company_name' => $row['company_name'],
@@ -56,6 +49,4 @@ $rows = array_map(static function (array $row): array {
         'longitude' => $row['longitude'],
         'starting_difficulty' => $row['starting_difficulty'],
     ];
-}, $stmt->fetchAll());
-
-json_response($rows);
+}, $stmt->fetchAll()));

@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Icaro Ops - Operations Map</title>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIINfQ8X0FHkG22riNBE4dGDXu/3M4E9fFQ="
-        crossorigin="">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="src/css/dashboard.css">
 </head>
 <body>
@@ -55,21 +53,20 @@
           <a href="#">Finance</a>
           <a href="#">Settings</a>
         </nav>
-        <div id="utcClock" class="utc-clock">--:--:-- UTC</div>
+        <div id="utcClock" class="utc-clock">---- -- -- --:--:-- UTC</div>
       </header>
 
-      <div id="map"></div>
+      <form id="airportSearchForm" class="map-search" autocomplete="off">
+        <input id="airportSearchInput" type="search" placeholder="Search airport, city, ICAO or IATA… e.g. Ciampino / LIRA">
+        <button type="submit">Search</button>
+        <div id="airportSearchResults" class="search-results" hidden></div>
+      </form>
 
-      <div class="map-help">
-        <strong>HQ map</strong>
-        <span>Your starting base is shown as a building. Aircraft will appear only when your company owns active aircraft.</span>
-      </div>
+      <div id="map" aria-label="Operations world map"></div>
     </main>
   </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-          crossorigin=""></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="src/js/dashboard-map.js"></script>
 </body>
 </html>

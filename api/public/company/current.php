@@ -3,19 +3,17 @@ declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
 
-/*
- * Temporary development endpoint.
- *
- * For now we load by companyId from query string because full authentication/session
- * is not implemented yet. Later this must be replaced by the logged-in session.
- */
-
 $companyId = filter_input(INPUT_GET, 'companyId', FILTER_VALIDATE_INT);
 
 if (!$companyId) {
     json_response(['error' => 'INVALID_COMPANY_ID'], 422);
 }
 
+/*
+ * Do not depend exclusively on v_starting_base_airports here.
+ * A company base must remain readable even if later balancing rules remove
+ * that airport from the starting-base view.
+ */
 $stmt = db()->prepare("
     SELECT
       co.id AS company_id,
@@ -25,34 +23,41 @@ $stmt = db()->prepare("
       co.reputation_score,
       co.base_airport_icao_code,
 
-      v.world_region_code,
-      v.world_region_name,
-      v.country_id,
-      v.country_name,
-      v.icao_code,
-      v.iata_code,
-      v.airport_name,
-      v.city,
-      v.location_name,
-      v.subdivision_name,
-      v.latitude,
-      v.longitude,
-      v.airport_type,
-      v.service_category,
-      v.base_tier,
-      v.max_initial_aircraft_class,
-      v.starting_base_score,
-      v.local_passenger_demand_score,
-      v.local_cargo_demand_score,
-      v.tourism_score,
-      v.business_score,
-      v.competition_score,
-      v.airport_fee_score,
-      v.starting_difficulty,
-      v.starting_base_note
+      wr.code AS world_region_code,
+      wr.name AS world_region_name,
+      c.id AS country_id,
+      c.name AS country_name,
+      a.icao_code,
+      a.iata_code,
+      a.name AS airport_name,
+      a.city,
+      a.location_name,
+      a.subdivision_name,
+      a.latitude,
+      a.longitude,
+      a.airport_type,
+      a.service_category,
+
+      COALESCE(v.base_tier, 'BASE') AS base_tier,
+      COALESCE(v.max_initial_aircraft_class, 'LIGHT_COMMERCIAL') AS max_initial_aircraft_class,
+      COALESCE(v.starting_base_score, 0) AS starting_base_score,
+      COALESCE(v.local_passenger_demand_score, 0) AS local_passenger_demand_score,
+      COALESCE(v.local_cargo_demand_score, 0) AS local_cargo_demand_score,
+      COALESCE(v.tourism_score, 0) AS tourism_score,
+      COALESCE(v.business_score, 0) AS business_score,
+      COALESCE(v.competition_score, 0) AS competition_score,
+      COALESCE(v.airport_fee_score, 0) AS airport_fee_score,
+      COALESCE(v.starting_difficulty, 'UNKNOWN') AS starting_difficulty,
+      COALESCE(v.starting_base_note, 'Company base airport.') AS starting_base_note
     FROM companies co
-    JOIN v_starting_base_airports v
-      ON v.icao_code = co.base_airport_icao_code
+    JOIN airports a
+      ON a.icao_code = co.base_airport_icao_code
+    JOIN countries c
+      ON c.id = a.country_id
+    JOIN world_regions wr
+      ON wr.code = c.world_region_code
+    LEFT JOIN v_starting_base_airports v
+      ON v.icao_code = a.icao_code
     WHERE co.id = :company_id
     LIMIT 1
 ");
