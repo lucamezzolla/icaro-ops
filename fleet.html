@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icaro Ops - Fleet</title>
+  <link rel="stylesheet" href="src/css/fleet.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">IO</div>
+        <div>
+          <strong>Icaro Ops</strong>
+          <span>Fleet Management</span>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h2>Company</h2>
+        <dl id="companySummary" class="summary-list">
+          <div><dt>Status</dt><dd>Loading...</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>Base aircraft capacity</h2>
+        <dl id="capacitySummary" class="summary-list">
+          <div><dt>Status</dt><dd>Loading...</dd></div>
+        </dl>
+      </section>
+    </aside>
+
+    <main class="content-shell">
+      <header class="topbar">
+        <nav>
+          <a href="index.html">Map</a>
+          <a href="fleet.html" class="active">Fleet</a>
+          <a href="staff.html">Staff</a>
+          <a href="routes.html">Routes</a>
+          <a href="#">Offers</a>
+          <a href="routes.html">Routes</a>
+          <a href="#">Finance</a>
+          <a href="index.html#settings">Settings</a>
+        </nav>
+        <div id="utcClock" class="utc-clock">---- -- -- --:--:-- UTC</div>
+      </header>
+
+      <section class="page-header">
+        <div>
+          <p class="eyebrow">Fleet</p>
+          <h1>Aircraft management</h1>
+          <p>Buy aircraft, inspect your fleet, list aircraft for sale and review the used market.</p>
+        </div>
+      </section>
+
+      <div id="pageError" class="page-error" hidden></div>
+
+      <section class="fleet-grid">
+        <article class="card wide">
+          <div class="card-header">
+            <div>
+              <h2>My aircraft</h2>
+              <p>Aircraft owned or leased by your company.</p>
+            </div>
+            <button id="refreshButton" type="button">Refresh</button>
+          </div>
+          <div id="myAircraftTable" class="table-shell">Loading...</div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>Buy new aircraft</h2>
+              <p>Initial catalog for testing the purchase flow.</p>
+            </div>
+          </div>
+          <div id="catalogList" class="catalog-list">Loading...</div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>Used market</h2>
+              <p>Aircraft listed for sale by other companies.</p>
+            </div>
+          </div>
+          <div id="usedMarketList" class="catalog-list">Loading...</div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="src/js/auth-guard.js"></script>
+  <script src="src/js/fleet.js"></script>
+</body>
+</html>

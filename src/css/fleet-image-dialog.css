@@ -1,0 +1,99 @@
+
+/* Aircraft image thumbnails and dialog. */
+.catalog-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.aircraft-thumb {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0 0 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.06);
+}
+
+.aircraft-thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+}
+
+.aircraft-image-button {
+  white-space: nowrap;
+}
+
+.aircraft-image-dialog-shell[hidden] {
+  display: none;
+}
+
+.aircraft-image-dialog-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+}
+
+.aircraft-image-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.68);
+}
+
+.aircraft-image-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(960px, calc(100vw - 36px));
+  margin: 42px auto;
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 22px;
+  overflow: hidden;
+  background: var(--panel);
+  box-shadow: 0 24px 70px rgba(0,0,0,0.45);
+}
+
+.aircraft-image-dialog header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  padding: 16px 18px;
+  background: var(--blue);
+}
+
+.aircraft-image-dialog h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.aircraft-image-dialog p {
+  margin: 3px 0 0;
+  color: var(--muted);
+}
+
+.aircraft-image-dialog header button {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 1.4rem;
+}
+
+.aircraft-image-dialog-body {
+  padding: 18px;
+  background: #e9edf3;
+}
+
+.aircraft-image-dialog-body img {
+  display: block;
+  width: 100%;
+  max-height: calc(100vh - 190px);
+  object-fit: contain;
+  border-radius: 14px;
+  background: #fff;
+}

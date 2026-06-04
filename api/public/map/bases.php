@@ -52,7 +52,17 @@ $companyStmt = db()->query("
       COALESCE(v.starting_difficulty, 'UNKNOWN') AS starting_difficulty,
 
       COALESCE(acp.airport_size_tier, 'UNCLASSIFIED') AS airport_size_tier,
-      COALESCE(acp.max_total_bases, 1) AS max_total_bases
+      COALESCE(acp.max_total_bases, 1) AS max_total_bases,
+
+      COALESCE(ps.max_aircraft_managed, 0) AS max_aircraft_managed,
+      COALESCE(ps.max_aircraft_on_ground, 0) AS max_aircraft_on_ground,
+      COALESCE(ps.aircraft_owned_count, 0) AS aircraft_owned_count,
+      COALESCE(ps.aircraft_at_base_count, 0) AS aircraft_at_base_count,
+      COALESCE(ps.aircraft_in_flight_count, 0) AS aircraft_in_flight_count,
+      COALESCE(ps.aircraft_maintenance_count, 0) AS aircraft_maintenance_count,
+      COALESCE(ps.free_managed_aircraft_slots, 0) AS free_managed_aircraft_slots,
+      COALESCE(ps.free_ground_aircraft_slots, 0) AS free_ground_aircraft_slots
+
     FROM companies co
     JOIN players p
       ON p.id = co.player_id
@@ -66,6 +76,9 @@ $companyStmt = db()->query("
       ON v.icao_code = a.icao_code
     LEFT JOIN airport_capacity_profiles acp
       ON acp.airport_icao_code = a.icao_code
+    LEFT JOIN v_player_base_aircraft_capacity_status ps
+      ON ps.company_id = co.id
+     AND ps.airport_icao_code = a.icao_code
     WHERE a.latitude IS NOT NULL
       AND a.longitude IS NOT NULL
 ");
@@ -80,8 +93,8 @@ $rivalStmt = db()->query("
       rc.id AS company_id,
       rc.company_name,
       rc.reputation_score,
-      NULL AS currency_code,
-      NULL AS budget_amount,
+      rc.currency_code,
+      rc.budget_amount,
       'Virtual rival' AS owner_name,
       rc.strategy_type,
 
@@ -111,7 +124,17 @@ $rivalStmt = db()->query("
       COALESCE(v.starting_difficulty, 'UNKNOWN') AS starting_difficulty,
 
       COALESCE(acp.airport_size_tier, 'UNCLASSIFIED') AS airport_size_tier,
-      COALESCE(acp.max_total_bases, 1) AS max_total_bases
+      COALESCE(acp.max_total_bases, 1) AS max_total_bases,
+
+      COALESCE(rs.max_aircraft_managed, 0) AS max_aircraft_managed,
+      COALESCE(rs.max_aircraft_on_ground, 0) AS max_aircraft_on_ground,
+      COALESCE(rs.aircraft_owned_count, 0) AS aircraft_owned_count,
+      COALESCE(rs.aircraft_at_base_count, 0) AS aircraft_at_base_count,
+      COALESCE(rs.aircraft_in_flight_count, 0) AS aircraft_in_flight_count,
+      COALESCE(rs.aircraft_maintenance_count, 0) AS aircraft_maintenance_count,
+      COALESCE(rs.free_managed_aircraft_slots, 0) AS free_managed_aircraft_slots,
+      COALESCE(rs.free_ground_aircraft_slots, 0) AS free_ground_aircraft_slots
+
     FROM rival_company_bases rb
     JOIN rival_companies rc
       ON rc.id = rb.rival_company_id
@@ -125,6 +148,9 @@ $rivalStmt = db()->query("
       ON v.icao_code = a.icao_code
     LEFT JOIN airport_capacity_profiles acp
       ON acp.airport_icao_code = a.icao_code
+    LEFT JOIN v_rival_base_aircraft_capacity_status rs
+      ON rs.rival_company_id = rc.id
+     AND rs.airport_icao_code = a.icao_code
     WHERE rc.is_active = TRUE
       AND a.latitude IS NOT NULL
       AND a.longitude IS NOT NULL
@@ -172,5 +198,14 @@ json_response(array_map(static function (array $row): array {
 
         'airport_size_tier' => $row['airport_size_tier'],
         'max_total_bases' => (int)$row['max_total_bases'],
+
+        'max_aircraft_managed' => (int)$row['max_aircraft_managed'],
+        'max_aircraft_on_ground' => (int)$row['max_aircraft_on_ground'],
+        'aircraft_owned_count' => (int)$row['aircraft_owned_count'],
+        'aircraft_at_base_count' => (int)$row['aircraft_at_base_count'],
+        'aircraft_in_flight_count' => (int)$row['aircraft_in_flight_count'],
+        'aircraft_maintenance_count' => (int)$row['aircraft_maintenance_count'],
+        'free_managed_aircraft_slots' => (int)$row['free_managed_aircraft_slots'],
+        'free_ground_aircraft_slots' => (int)$row['free_ground_aircraft_slots'],
     ];
 }, $rows));

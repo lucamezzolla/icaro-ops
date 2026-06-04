@@ -11,6 +11,7 @@ const DEFAULT_WORLD_BOUNDS = L.latLngBounds(
 
 const SAME_AIRPORT_MARKER_OFFSET_METERS = 180;
 const SETTINGS_SHOW_BASES_KEY = "icaro_ops_show_bases_on_map";
+const ACTIVE_COMPANY_KEY = "icaro_ops_active_company_id";
 
 let map;
 let baseLayer;
@@ -27,6 +28,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   bindSettingsPanel();
 
   currentCompanyId = resolveCompanyId();
+  syncInternalNavLinks();
 
   await loadOperationsMap(currentCompanyId);
 });
@@ -61,6 +63,8 @@ function initMap() {
     baseLayer.addTo(map);
   }
 
+  window.icaroOpsMap = map;
+
   fitWorldSafely();
 
   window.addEventListener("resize", () => {
@@ -76,9 +80,6 @@ function initMap() {
 async function loadOperationsMap(companyId) {
   try {
     visibleBasesCache = await getJson(API.visibleBases);
-    const ownBase = companyId ? visibleBasesCache.find(base =>
-      base.base_owner_type === "PLAYER" && String(base.company_id) === String(companyId)
-    ) || null : null;
 
     renderVisibleBases(visibleBasesCache, companyId);
 
@@ -88,16 +89,22 @@ async function loadOperationsMap(companyId) {
       fitWorldSafely();
     }
 
-    if (ownBase) {
-      renderSelectedBase(ownBase);
-    } else if (companyId) {
-      await loadAndRenderCompanyFallback(companyId);
+    if (companyId) {
+      const ownBase = visibleBasesCache.find(base =>
+        base.base_owner_type === "PLAYER" && String(base.company_id) === String(companyId)
+      );
+
+      if (ownBase) {
+        persistActiveCompany(ownBase.company_id);
+        renderSelectedBase(ownBase);
+      } else {
+        await loadAndRenderCompanyFallback(companyId);
+      }
     } else if (visibleBasesCache.length > 0) {
       renderSelectedBase(visibleBasesCache[0]);
     } else {
       setCompanySummaryError("No visible bases yet. Create a company first.");
     }
-
   } catch (error) {
     setCompanySummaryError("Unable to load visible bases. Check API, PHP and MySQL configuration.");
     fitWorldSafely();
@@ -107,12 +114,39 @@ async function loadOperationsMap(companyId) {
 async function loadAndRenderCompanyFallback(companyId) {
   try {
     const company = await getJson(API.currentCompany(companyId));
+    persistActiveCompany(company.company_id);
     renderCompanyFallback(company);
   } catch {
     setCompanySummaryError("Company not found. Create a company first.");
   }
 }
 
+function persistActiveCompany(companyId) {
+  if (!companyId) return;
+
+  sessionStorage.setItem(ACTIVE_COMPANY_KEY, String(companyId));
+
+  const raw = sessionStorage.getItem("icaro_ops_company");
+  let payload = {};
+
+  if (raw) {
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      payload = {};
+    }
+  }
+
+  payload.company_id = Number(companyId);
+  sessionStorage.setItem("icaro_ops_company", JSON.stringify(payload));
+}
+
+function syncInternalNavLinks() {
+  const fleetLink = document.querySelector("#fleetNavLink");
+  if (fleetLink) {
+    fleetLink.href = "fleet.html";
+  }
+}
 
 function bindSettingsPanel() {
   const settingsLink = document.querySelector("#settingsNavLink");
@@ -243,7 +277,11 @@ function offsetLatLng(latitude, longitude, meters, angleRadians) {
 
 function renderBaseMarker(base, companyId) {
   const isOwn = base.base_owner_type === "PLAYER" && String(base.company_id) === String(companyId);
-  const markerClass = isOwn ? "hq-marker" : base.base_owner_type === "RIVAL" ? "rival-base-marker" : "other-player-base-marker";
+  const markerClass = isOwn
+    ? "hq-marker"
+    : base.base_owner_type === "RIVAL"
+      ? "rival-base-marker"
+      : "other-player-base-marker";
   const title = isOwn ? `${base.company_name} HQ` : `${base.company_name} base`;
 
   const marker = L.marker([base.markerLatitude, base.markerLongitude], {
@@ -274,6 +312,7 @@ function buildBasePopup(base, isOwn) {
       <h3>${escapeHtml(base.company_name)} ${isOwn ? "HQ" : "Base"}</h3>
       <p><strong>Type:</strong> ${escapeHtml(typeLabel)}</p>
       <p><strong>Owner:</strong> ${escapeHtml(base.owner_name || "-")}</p>
+      <p><strong>Budget:</strong> ${formatBudget(base)}</p>
       <p><strong>${escapeHtml(base.icao_code)}${base.iata_code ? " / " + escapeHtml(base.iata_code) : ""}</strong></p>
       <p>${escapeHtml(base.airport_name)}</p>
       <p>${escapeHtml(base.city || base.location_name || "")}, ${escapeHtml(base.country_name)}</p>
@@ -281,9 +320,10 @@ function buildBasePopup(base, isOwn) {
       <dl>
         <dt>Size</dt><dd>${escapeHtml(base.airport_size_tier || "-")}</dd>
         <dt>Base slots</dt><dd>${escapeHtml(base.max_total_bases ?? "-")}</dd>
-        <dt>Difficulty</dt><dd>${escapeHtml(base.starting_difficulty || "-")}</dd>
-        <dt>Passenger potential</dt><dd>${safeScore(base.local_passenger_demand_score)}</dd>
-        <dt>Cargo potential</dt><dd>${safeScore(base.local_cargo_demand_score)}</dd>
+        <dt>Aircraft</dt><dd>${safeScore(base.aircraft_owned_count)} / ${safeScore(base.max_aircraft_managed)}</dd>
+        <dt>At base</dt><dd>${safeScore(base.aircraft_at_base_count)} / ${safeScore(base.max_aircraft_on_ground)}</dd>
+        <dt>In flight</dt><dd>${safeScore(base.aircraft_in_flight_count)}</dd>
+        <dt>Maintenance</dt><dd>${safeScore(base.aircraft_maintenance_count)}</dd>
       </dl>
     </div>
   `;
@@ -316,16 +356,22 @@ function fitMapToVisibleBases(bases) {
 
 function renderSelectedBase(base) {
   document.querySelector("#companySummary").innerHTML = `
-    ${summaryRow("Selected", base.base_owner_type === "RIVAL" ? "Virtual rival base" : base.base_owner_type === "PLAYER" ? "Player base" : "Base")}
+    ${summaryRow("Selected", base.base_owner_type === "RIVAL" ? "Virtual rival base" : "Player base")}
     ${summaryRow("Owner", base.owner_name)}
     ${summaryRow("Company", base.company_name)}
+    ${summaryRow("Budget", formatBudget(base))}
     ${summaryRow("Reputation", base.reputation_score)}
-    ${base.currency_code ? summaryRow("Budget", `${base.budget_amount} ${base.currency_code}`) : ""}
     ${summaryRow("Base", `${base.icao_code}${base.iata_code ? " / " + base.iata_code : ""}`)}
     ${summaryRow("Airport", base.airport_name)}
     ${summaryRow("Country", base.country_name)}
     ${summaryRow("Airport size", base.airport_size_tier)}
     ${summaryRow("Max bases", base.max_total_bases)}
+    ${summaryRow("Aircraft", `${base.aircraft_owned_count} / ${base.max_aircraft_managed}`)}
+    ${summaryRow("At base", `${base.aircraft_at_base_count} / ${base.max_aircraft_on_ground}`)}
+    ${summaryRow("In flight", base.aircraft_in_flight_count)}
+    ${summaryRow("Maintenance", base.aircraft_maintenance_count)}
+    ${summaryRow("Free fleet slots", base.free_managed_aircraft_slots)}
+    ${summaryRow("Free ground slots", base.free_ground_aircraft_slots)}
   `;
 
   renderMarketSummary(base);
@@ -333,15 +379,27 @@ function renderSelectedBase(base) {
 
 function renderCompanyFallback(company) {
   const airport = company.base_airport;
+  const base = {
+    ...airport,
+    company_name: company.company_name,
+    owner_name: company.owner_name,
+    budget_amount: company.budget_amount,
+    currency_code: company.currency_code,
+    reputation_score: company.reputation_score
+  };
 
   document.querySelector("#companySummary").innerHTML = `
     ${summaryRow("Owner", company.owner_name)}
     ${summaryRow("Company", company.company_name)}
-    ${summaryRow("Budget", `${company.budget_amount} ${company.currency_code}`)}
+    ${summaryRow("Budget", formatBudget(base))}
     ${summaryRow("Reputation", company.reputation_score)}
     ${summaryRow("Base", `${airport.icao_code}${airport.iata_code ? " / " + airport.iata_code : ""}`)}
     ${summaryRow("Airport", airport.airport_name)}
     ${summaryRow("Country", airport.country_name)}
+    ${summaryRow("Aircraft", `${airport.aircraft_owned_count} / ${airport.max_aircraft_managed}`)}
+    ${summaryRow("At base", `${airport.aircraft_at_base_count} / ${airport.max_aircraft_on_ground}`)}
+    ${summaryRow("In flight", airport.aircraft_in_flight_count)}
+    ${summaryRow("Maintenance", airport.aircraft_maintenance_count)}
   `;
 
   renderMarketSummary(airport);
@@ -475,7 +533,13 @@ function resolveCompanyId() {
   const params = new URLSearchParams(window.location.search);
   const fromQuery = params.get("companyId");
 
-  if (fromQuery) return fromQuery;
+  if (fromQuery) {
+    persistActiveCompany(fromQuery);
+    return fromQuery;
+  }
+
+  const active = sessionStorage.getItem(ACTIVE_COMPANY_KEY);
+  if (active) return active;
 
   const raw = sessionStorage.getItem("icaro_ops_company");
   if (!raw) return null;
@@ -486,6 +550,19 @@ function resolveCompanyId() {
   } catch {
     return null;
   }
+}
+
+function formatBudget(base) {
+  if (base.budget_amount == null || base.currency_code == null) {
+    return "-";
+  }
+
+  const value = Number(base.budget_amount ?? 0).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+
+  return `${value} ${base.currency_code}`;
 }
 
 function summaryRow(label, value) {

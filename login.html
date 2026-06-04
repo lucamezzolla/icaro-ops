@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icaro Ops - Login</title>
+  <link rel="stylesheet" href="src/css/auth.css">
+</head>
+<body>
+  <main class="auth-shell">
+    <section class="auth-card">
+      <div class="brand">
+        <div class="brand-mark">IO</div>
+        <div>
+          <strong>Icaro Ops</strong>
+          <span>Operations Control</span>
+        </div>
+      </div>
+
+      <h1>Login</h1>
+      <p class="muted">Access your company and continue operations.</p>
+
+      <form id="loginForm">
+        <label>
+          Email
+          <input id="email" name="email" type="email" autocomplete="email" required>
+        </label>
+
+        <label>
+          Password
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+        </label>
+
+        <label class="remember-row">
+          <input id="rememberSession" type="checkbox" checked>
+          <span>Keep this session on this browser</span>
+        </label>
+
+        <button type="submit">Login</button>
+      </form>
+
+      <div id="loginError" class="auth-error" hidden></div>
+
+      <p class="auth-footer">
+        New company?
+        <a href="signup.html">Create an account</a>
+      </p>
+    </section>
+  </main>
+
+  <script src="src/js/login.js"></script>
+</body>
+</html>

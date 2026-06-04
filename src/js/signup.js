@@ -1,258 +1,338 @@
-const API = {
+/*
+ * Icaro Ops signup page.
+ *
+ * Supports the Starting base cascade:
+ *   Region -> Country -> Airport
+ *
+ * Expected endpoint family:
+ *   api/public/starting-base/regions.php
+ *   api/public/starting-base/countries.php?worldRegionCode=EUROPE
+ *   api/public/starting-base/countries.php?region=EUROPE
+ *   api/public/starting-base/airports.php?countryId=123
+ *   api/public/starting-base/airports.php?country_id=123
+ *
+ * The code is deliberately tolerant about element IDs because the signup page
+ * changed a few times during development.
+ */
+
+const SIGNUP_API = {
   regions: "api/public/starting-base/regions.php",
-  countries: regionCode => `api/public/starting-base/countries.php?region=${encodeURIComponent(regionCode)}`,
-  airports: countryId => `api/public/starting-base/airports.php?countryId=${encodeURIComponent(countryId)}`,
-  signup: "api/public/signup.php"
+  countriesByRegion: regionCode => [
+    `api/public/starting-base/countries.php?worldRegionCode=${encodeURIComponent(regionCode)}`,
+    `api/public/starting-base/countries.php?region=${encodeURIComponent(regionCode)}`,
+    `api/public/starting-base/countries.php?world_region_code=${encodeURIComponent(regionCode)}`
+  ],
+  airportsByCountry: countryId => [
+    `api/public/starting-base/airports.php?countryId=${encodeURIComponent(countryId)}`,
+    `api/public/starting-base/airports.php?country_id=${encodeURIComponent(countryId)}`
+  ]
 };
 
-const state = {
-  selectedAirport: null
-};
+document.addEventListener("DOMContentLoaded", async () => {
+  const form = document.querySelector("#signupForm");
+  const regionSelect = findElement("worldRegionCode", "regionSelect", "worldRegionSelect", "startingBaseRegion");
+  const countrySelect = findElement("countryId", "countrySelect", "startingBaseCountry");
+  const airportSelect = findElement("baseAirportIcao", "baseAirportIcaoCode", "airportSelect", "startingBaseAirport");
+  const error = findElement("signupError", "formError");
 
-const $ = selector => document.querySelector(selector);
+  await initializeStartingBaseSelectors(regionSelect, countrySelect, airportSelect, error);
 
-const regionSelect = $("#regionSelect");
-const countrySelect = $("#countrySelect");
-const airportSelect = $("#airportSelect");
-const marketPreview = $("#marketPreview");
-const formError = $("#formError");
-const signupForm = $("#signupForm");
+  if (form) {
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      await submitSignup(form, airportSelect, error);
+    });
+  }
+});
 
-document.addEventListener("DOMContentLoaded", init);
+async function initializeStartingBaseSelectors(regionSelect, countrySelect, airportSelect, error) {
+  if (!regionSelect || !countrySelect || !airportSelect) {
+    showError(error, "Starting base selectors were not found in signup.html.");
+    return;
+  }
 
-async function init() {
-  bindEvents();
-  await loadRegions();
-}
+  setSelectLoading(regionSelect, "Loading regions...");
+  setSelectDisabled(countrySelect, "Select a region first");
+  setSelectDisabled(airportSelect, "Select a country first");
 
-function bindEvents() {
+  try {
+    const regions = normalizeRows(await getJson(SIGNUP_API.regions));
+    fillRegionSelect(regionSelect, regions);
+  } catch (err) {
+    setSelectDisabled(regionSelect, "Unable to load regions");
+    showError(error, `Unable to load starting regions: ${err.message}`);
+    return;
+  }
+
   regionSelect.addEventListener("change", async () => {
-    resetSelect(countrySelect, "Loading countries...");
-    resetSelect(airportSelect, "Choose a country first", true);
-    renderEmptyPreview();
+    const regionCode = regionSelect.value;
 
-    if (!regionSelect.value) {
-      resetSelect(countrySelect, "Choose a region first", true);
+    setSelectDisabled(countrySelect, "Loading countries...");
+    setSelectDisabled(airportSelect, "Select a country first");
+
+    if (!regionCode) {
+      setSelectDisabled(countrySelect, "Select a region first");
       return;
     }
 
-    await loadCountries(regionSelect.value);
+    try {
+      const countries = normalizeRows(await getJsonWithFallback(SIGNUP_API.countriesByRegion(regionCode)));
+      fillCountrySelect(countrySelect, countries);
+    } catch (err) {
+      setSelectDisabled(countrySelect, "Unable to load countries");
+      showError(error, `Unable to load countries: ${err.message}`);
+    }
   });
 
   countrySelect.addEventListener("change", async () => {
-    resetSelect(airportSelect, "Loading airports...");
-    renderEmptyPreview();
+    const countryId = countrySelect.value;
 
-    if (!countrySelect.value) {
-      resetSelect(airportSelect, "Choose a country first", true);
+    setSelectDisabled(airportSelect, "Loading airports...");
+
+    if (!countryId) {
+      setSelectDisabled(airportSelect, "Select a country first");
       return;
     }
 
-    await loadAirports(countrySelect.value);
-  });
-
-  airportSelect.addEventListener("change", () => {
-    const option = airportSelect.selectedOptions[0];
-    const raw = option?.dataset.airport;
-
-    state.selectedAirport = raw ? JSON.parse(raw) : null;
-    renderMarketPreview(state.selectedAirport);
-  });
-
-  signupForm.addEventListener("submit", submitSignup);
-}
-
-async function loadRegions() {
-  try {
-    const regions = await getJson(API.regions);
-    fillSelect(regionSelect, "Choose a region", regions, region => ({
-      value: region.world_region_code,
-      label: region.world_region_name
-    }));
-  } catch (error) {
-    showError("Cannot load regions. Check PHP server and database configuration.");
-    resetSelect(regionSelect, "API not available", true);
-  }
-}
-
-async function loadCountries(regionCode) {
-  try {
-    const countries = await getJson(API.countries(regionCode));
-    fillSelect(countrySelect, "Choose a country", countries, country => ({
-      value: country.country_id,
-      label: country.country_name
-    }));
-  } catch (error) {
-    showError("Cannot load countries for the selected region.");
-    resetSelect(countrySelect, "API not available", true);
-  }
-}
-
-async function loadAirports(countryId) {
-  try {
-    const airports = await getJson(API.airports(countryId));
-    fillSelect(airportSelect, "Choose a starting airport", airports, airport => ({
-      value: airport.icao_code,
-      label: formatAirportOption(airport),
-      data: airport
-    }));
-  } catch (error) {
-    showError("Cannot load starting airports for the selected country.");
-    resetSelect(airportSelect, "API not available", true);
-  }
-}
-
-function fillSelect(select, placeholder, rows, mapper) {
-  select.innerHTML = "";
-  select.disabled = false;
-
-  const first = document.createElement("option");
-  first.value = "";
-  first.textContent = placeholder;
-  select.appendChild(first);
-
-  for (const row of rows) {
-    const mapped = mapper(row);
-    const option = document.createElement("option");
-    option.value = mapped.value;
-    option.textContent = mapped.label;
-
-    if (mapped.data) {
-      option.dataset.airport = JSON.stringify(mapped.data);
+    try {
+      const airports = normalizeRows(await getJsonWithFallback(SIGNUP_API.airportsByCountry(countryId)));
+      fillAirportSelect(airportSelect, airports);
+    } catch (err) {
+      setSelectDisabled(airportSelect, "Unable to load airports");
+      showError(error, `Unable to load airports: ${err.message}`);
     }
-
-    select.appendChild(option);
-  }
-
-  if (!rows.length) {
-    resetSelect(select, "No values available", true);
-  }
+  });
 }
 
-function resetSelect(select, placeholder, disabled = false) {
-  select.innerHTML = "";
-  const option = document.createElement("option");
-  option.value = "";
-  option.textContent = placeholder;
-  select.appendChild(option);
-  select.disabled = disabled;
-}
-
-function formatAirportOption(airport) {
-  const iata = airport.iata_code ? ` / ${airport.iata_code}` : "";
-  const city = airport.city ? ` - ${airport.city}` : "";
-  const score = airport.starting_base_score != null ? ` · score ${airport.starting_base_score}` : "";
-  return `${airport.icao_code}${iata} · ${airport.airport_name}${city}${score}`;
-}
-
-function renderEmptyPreview() {
-  state.selectedAirport = null;
-  marketPreview.className = "market-preview empty";
-  marketPreview.innerHTML = `
-    <h3>No airport selected</h3>
-    <p>Choose a starting airport to see local demand potential, costs and difficulty.</p>
-  `;
-}
-
-function renderMarketPreview(airport) {
-  if (!airport) {
-    renderEmptyPreview();
-    return;
-  }
-
-  marketPreview.className = "market-preview";
-  marketPreview.innerHTML = `
-    <h3>${escapeHtml(airport.airport_name)}</h3>
-    <p>
-      ${escapeHtml(airport.icao_code)}${airport.iata_code ? " / " + escapeHtml(airport.iata_code) : ""}
-      · ${escapeHtml(airport.city || airport.location_name || "Unknown location")}
-      · ${escapeHtml(airport.base_tier || "Base")}
-      · ${escapeHtml(airport.starting_difficulty || "MEDIUM")}
-    </p>
-
-    <div class="market-grid">
-      ${metric("Passenger potential", airport.local_passenger_demand_score)}
-      ${metric("Cargo potential", airport.local_cargo_demand_score)}
-      ${metric("Tourism potential", airport.tourism_score)}
-      ${metric("Business potential", airport.business_score)}
-      ${metric("Competition pressure", airport.competition_score)}
-      ${metric("Airport fees level", airport.airport_fee_score)}
-    </div>
-  `;
-}
-
-function metric(label, value) {
-  const safeValue = value == null ? "-" : value;
-  return `
-    <div class="market-metric">
-      <strong>${safeValue}</strong>
-      <span>${escapeHtml(label)}</span>
-    </div>
-  `;
-}
-
-async function submitSignup(event) {
-  event.preventDefault();
-  hideError();
-
-  if (!state.selectedAirport) {
-    showError("Choose a valid starting airport before creating the company.");
-    return;
-  }
+async function submitSignup(form, airportSelect, error) {
+  hideError(error);
 
   const payload = {
-    first_name: $("#firstName").value.trim(),
-    last_name: $("#lastName").value.trim(),
-    company_name: $("#companyName").value.trim(),
-    interface_language: $("#interfaceLanguage").value,
-    currency_code: $("#currencyCode").value,
-    base_airport_icao_code: state.selectedAirport.icao_code
+    first_name: valueOf("firstName", "first_name"),
+    last_name: valueOf("lastName", "last_name"),
+    email: valueOf("email"),
+    password: valueOf("password"),
+    company_name: valueOf("companyName", "company_name"),
+    interface_language: valueOf("interfaceLanguage", "interface_language") || "it",
+    currency_code: valueOf("currencyCode", "currency_code") || "EUR",
+    base_airport_icao_code: getAirportIcao(airportSelect)
   };
 
   try {
-    const response = await fetch(API.signup, {
+    const response = await fetch("api/public/signup.php", {
       method: "POST",
       headers: {
+        "Accept": "application/json",
         "Content-Type": "application/json"
       },
+      credentials: "same-origin",
       body: JSON.stringify(payload)
     });
 
-    const body = await response.json().catch(() => ({}));
+    const body = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw new Error(body.message || `Signup failed with status ${response.status}`);
+      throw new Error(body?.message || body?.error || "Signup failed.");
     }
 
+    sessionStorage.setItem("icaro_ops_active_company_id", String(body.company_id));
     sessionStorage.setItem("icaro_ops_company", JSON.stringify(body));
+
     window.location.href = "index.html";
-  } catch (error) {
-    showError(error.message || "Unable to create company.");
+  } catch (err) {
+    showError(error, err.message || "Signup failed.");
   }
+}
+
+function fillRegionSelect(select, rows) {
+  select.disabled = false;
+  select.innerHTML = `<option value="">Select region</option>`;
+
+  for (const row of rows) {
+    const code = row.code ?? row.world_region_code ?? row.region_code ?? row.id ?? "";
+    const name = row.name ?? row.world_region_name ?? row.region_name ?? code;
+
+    if (!code) continue;
+
+    select.appendChild(option(String(code), String(name)));
+  }
+
+  if (select.options.length <= 1) {
+    setSelectDisabled(select, "No regions available");
+  }
+}
+
+function fillCountrySelect(select, rows) {
+  select.disabled = false;
+  select.innerHTML = `<option value="">Select country</option>`;
+
+  for (const row of rows) {
+    const id = row.id ?? row.country_id ?? "";
+    const name = row.name ?? row.country_name ?? "";
+
+    if (!id || !name) continue;
+
+    select.appendChild(option(String(id), String(name)));
+  }
+
+  if (select.options.length <= 1) {
+    setSelectDisabled(select, "No countries available");
+  }
+}
+
+function fillAirportSelect(select, rows) {
+  select.disabled = false;
+  select.innerHTML = `<option value="">Select airport</option>`;
+
+  for (const row of rows) {
+    const icao = row.icao_code ?? row.airport_icao_code ?? row.base_airport_icao_code ?? "";
+    const iata = row.iata_code ? ` / ${row.iata_code}` : "";
+    const name = row.airport_name ?? row.name ?? "";
+    const city = row.city ?? row.location_name ?? "";
+    const slots = formatSlots(row);
+
+    if (!icao || !name) continue;
+
+    select.appendChild(option(String(icao), `${icao}${iata} · ${name}${city ? ` · ${city}` : ""}${slots}`));
+  }
+
+  if (select.options.length <= 1) {
+    setSelectDisabled(select, "No suitable airports available");
+  }
+}
+
+function formatSlots(row) {
+  const free = row.available_total_base_slots ?? row.available_slots ?? null;
+  const max = row.max_total_bases ?? null;
+
+  if (free === null || max === null) {
+    return "";
+  }
+
+  return ` · slots ${free}/${max}`;
 }
 
 async function getJson(url) {
   const response = await fetch(url, {
-    headers: {
-      "Accept": "application/json"
-    }
+    headers: { "Accept": "application/json" },
+    credentials: "same-origin"
   });
 
+  const body = await response.json().catch(() => null);
+
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    throw new Error(body?.message || body?.error || `HTTP ${response.status}`);
   }
 
-  return response.json();
+  return body;
 }
 
-function showError(message) {
-  formError.hidden = false;
-  formError.textContent = message;
+async function getJsonWithFallback(urls) {
+  let lastError = null;
+
+  for (const url of urls) {
+    try {
+      return await getJson(url);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error("Request failed.");
 }
 
-function hideError() {
-  formError.hidden = true;
-  formError.textContent = "";
+function normalizeRows(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.rows)) return payload.rows;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.regions)) return payload.regions;
+  if (Array.isArray(payload?.countries)) return payload.countries;
+  if (Array.isArray(payload?.airports)) return payload.airports;
+  return [];
+}
+
+function findElement(...ids) {
+  for (const id of ids) {
+    const element = document.querySelector(`#${id}`);
+    if (element) return element;
+  }
+
+  return null;
+}
+
+function valueOf(...ids) {
+  const element = findElement(...ids);
+  return String(element?.value ?? "").trim();
+}
+
+function getAirportIcao(airportSelect) {
+  if (airportSelect) {
+    const selected = airportSelect.options[airportSelect.selectedIndex];
+
+    const fromDataset =
+      selected?.dataset?.icao ||
+      selected?.dataset?.icaoCode ||
+      selected?.dataset?.airportIcaoCode;
+
+    if (fromDataset) {
+      return String(fromDataset).trim().toUpperCase();
+    }
+
+    const value = String(airportSelect.value ?? "").trim().toUpperCase();
+
+    // If the select value is already an ICAO code, use it.
+    if (/^[A-Z0-9]{4}$/.test(value)) {
+      return value;
+    }
+
+    // Fallback: extract the first ICAO-like code from the visible option text.
+    // Example: "LIRA / CIA · Rome Ciampino ..."
+    const text = String(selected?.textContent ?? "").toUpperCase();
+    const match = text.match(/\b[A-Z0-9]{4}\b/);
+
+    if (match) {
+      return match[0];
+    }
+  }
+
+  return valueOf("baseAirportIcao", "baseAirportIcaoCode").toUpperCase();
+}
+
+function option(value, label) {
+  const option = document.createElement("option");
+  option.value = value;
+  option.textContent = label;
+  return option;
+}
+
+function setSelectLoading(select, label) {
+  if (!select) return;
+  select.disabled = true;
+  select.innerHTML = `<option value="">${escapeHtml(label)}</option>`;
+}
+
+function setSelectDisabled(select, label) {
+  if (!select) return;
+  select.disabled = true;
+  select.innerHTML = `<option value="">${escapeHtml(label)}</option>`;
+}
+
+function showError(error, message) {
+  if (!error) {
+    console.error(message);
+    return;
+  }
+
+  error.hidden = false;
+  error.textContent = message;
+}
+
+function hideError(error) {
+  if (!error) return;
+
+  error.hidden = true;
+  error.textContent = "";
 }
 
 function escapeHtml(value) {

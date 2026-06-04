@@ -53,7 +53,17 @@ $stmt = db()->prepare("
       acp.airport_size_tier,
       acp.max_player_bases,
       acp.max_rival_bases,
-      acp.max_total_bases
+      acp.max_total_bases,
+
+      COALESCE(ps.max_aircraft_managed, 0) AS max_aircraft_managed,
+      COALESCE(ps.max_aircraft_on_ground, 0) AS max_aircraft_on_ground,
+      COALESCE(ps.aircraft_owned_count, 0) AS aircraft_owned_count,
+      COALESCE(ps.aircraft_at_base_count, 0) AS aircraft_at_base_count,
+      COALESCE(ps.aircraft_in_flight_count, 0) AS aircraft_in_flight_count,
+      COALESCE(ps.aircraft_maintenance_count, 0) AS aircraft_maintenance_count,
+      COALESCE(ps.free_managed_aircraft_slots, 0) AS free_managed_aircraft_slots,
+      COALESCE(ps.free_ground_aircraft_slots, 0) AS free_ground_aircraft_slots
+
     FROM companies co
     JOIN players p
       ON p.id = co.player_id
@@ -67,6 +77,9 @@ $stmt = db()->prepare("
       ON v.icao_code = a.icao_code
     LEFT JOIN airport_capacity_profiles acp
       ON acp.airport_icao_code = a.icao_code
+    LEFT JOIN v_player_base_aircraft_capacity_status ps
+      ON ps.company_id = co.id
+     AND ps.airport_icao_code = a.icao_code
     WHERE co.id = :company_id
     LIMIT 1
 ");
@@ -122,5 +135,14 @@ json_response([
         'max_player_bases' => isset($row['max_player_bases']) ? (int)$row['max_player_bases'] : 1,
         'max_rival_bases' => isset($row['max_rival_bases']) ? (int)$row['max_rival_bases'] : 0,
         'max_total_bases' => isset($row['max_total_bases']) ? (int)$row['max_total_bases'] : 1,
+
+        'max_aircraft_managed' => (int)$row['max_aircraft_managed'],
+        'max_aircraft_on_ground' => (int)$row['max_aircraft_on_ground'],
+        'aircraft_owned_count' => (int)$row['aircraft_owned_count'],
+        'aircraft_at_base_count' => (int)$row['aircraft_at_base_count'],
+        'aircraft_in_flight_count' => (int)$row['aircraft_in_flight_count'],
+        'aircraft_maintenance_count' => (int)$row['aircraft_maintenance_count'],
+        'free_managed_aircraft_slots' => (int)$row['free_managed_aircraft_slots'],
+        'free_ground_aircraft_slots' => (int)$row['free_ground_aircraft_slots'],
     ],
 ]);

@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icaro Ops - Routes</title>
+  <link rel="stylesheet" href="src/css/routes.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">IO</div>
+        <div>
+          <strong>Icaro Ops</strong>
+          <span>Route Planning</span>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h2>Company</h2>
+        <dl id="companySummary" class="summary-list">
+          <div><dt>Status</dt><dd>Loading...</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <h2>First route</h2>
+        <p class="muted">
+          Create your first daily route from LIRA to LIML at 10:00 UTC with your Cessna 208.
+        </p>
+      </section>
+    </aside>
+
+    <main class="content-shell">
+      <header class="topbar">
+        <nav>
+          <a href="index.html">Map</a>
+          <a href="fleet.html">Fleet</a>
+          <a href="staff.html">Staff</a>
+          <a href="routes.html" class="active">Routes</a>
+          <a href="#">Finance</a>
+        </nav>
+        <div id="utcClock" class="utc-clock">---- -- -- --:--:-- UTC</div>
+      </header>
+
+      <section class="page-header">
+        <div>
+          <p class="eyebrow">Routes</p>
+          <h1>Scheduled route planning</h1>
+          <p>Build your first line route, then start a flight and watch it progress on the map.</p>
+        </div>
+      </section>
+
+      <div id="pageError" class="page-error" hidden></div>
+
+      <section class="routes-grid">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>Create route</h2>
+              <p>Default test route: LIRA → LIML at 10:00 UTC.</p>
+            </div>
+          </div>
+
+          <form id="routeForm" class="route-form">
+            <label>
+              Origin ICAO
+              <input id="originAirport" value="LIRA" maxlength="4" required>
+            </label>
+
+            <label>
+              Destination ICAO
+              <input id="destinationAirport" value="LIML" maxlength="4" required>
+            </label>
+
+            <label>
+              Scheduled UTC time
+              <input id="scheduledTime" type="time" value="10:00" required>
+            </label>
+
+            <label>
+              Ticket price
+              <input id="ticketPrice" type="number" value="145" min="0" step="1" required>
+            </label>
+
+            <button type="submit">Create daily route</button>
+          </form>
+        </article>
+
+        <article class="card wide">
+          <div class="card-header">
+            <div>
+              <h2>My routes</h2>
+              <p>Daily scheduled routes operated by your company.</p>
+            </div>
+            <button id="refreshButton" type="button">Refresh</button>
+          </div>
+
+          <div id="routesList" class="route-list">Loading...</div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="src/js/auth-guard.js"></script>
+  <script src="src/js/routes.js"></script>
+</body>
+</html>
