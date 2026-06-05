@@ -13,29 +13,28 @@
         <div class="brand-mark">IO</div>
         <div>
           <strong>Icaro Ops</strong>
-          <span>Fleet Management</span>
+          <span>Fleet</span>
         </div>
       </div>
 
       <section class="panel">
-        <h2>Company</h2>
-        <dl id="companySummary" class="summary-list">
-          <div><dt>Status</dt><dd>Loading...</dd></div>
-        </dl>
+        <h2>Fleet</h2>
+        <p class="muted">
+          Aircraft are company assets. Pilots are managed as a qualified pool,
+          not permanently attached to a single aircraft.
+        </p>
       </section>
 
       <section class="panel">
-        <h2>Base aircraft capacity</h2>
-        <dl id="capacitySummary" class="summary-list">
-          <div><dt>Status</dt><dd>Loading...</dd></div>
+        <dl id="fleetSummary" class="summary-list">
+          <div><dt>Aircraft</dt><dd>Loading...</dd></div>
         </dl>
       </section>
     </aside>
 
     <main class="content-shell">
       <header class="topbar">
-        
-                                <nav>
+        <nav>
           <a href="index.html">Map</a>
           <a href="fleet.html" class="active">Fleet</a>
           <a href="staff.html">Staff</a>
@@ -50,48 +49,112 @@
 
       <section class="page-header">
         <div>
-          <p class="eyebrow">Fleet</p>
-          <h1>Aircraft management</h1>
-          <p>Buy aircraft, inspect your fleet, list aircraft for sale and review the used market.</p>
+          <p class="eyebrow">Assets</p>
+          <h1>Fleet</h1>
+          <p>Manage owned aircraft, maintenance and new aircraft purchases.</p>
         </div>
+        <button id="buyAircraftButton" type="button">Buy aircraft</button>
       </section>
 
-      <div id="pageError" class="page-error" hidden></div>
+      <div id="fleetPageError" class="page-error" hidden></div>
+      <div id="fleetPageSuccess" class="page-success" hidden></div>
 
-      <section class="fleet-grid">
-        <article class="card wide">
+      <section class="table-grid">
+        <article class="card">
           <div class="card-header">
             <div>
-              <h2>My aircraft</h2>
-              <p>Aircraft owned or leased by your company.</p>
+              <h2>Owned aircraft</h2>
+              <p>Essential data only. Open details for technical and financial information.</p>
             </div>
             <button id="refreshButton" type="button">Refresh</button>
           </div>
-          <div id="myAircraftTable" class="table-shell">Loading...</div>
-        </article>
 
-        <article class="card">
-          <div class="card-header">
-            <div>
-              <h2>Buy new aircraft</h2>
-              <p>Initial catalog for testing the purchase flow.</p>
-            </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Registration</th>
+                  <th>Aircraft</th>
+                  <th>Status</th>
+                  <th>Airport</th>
+                  <th>Condition</th>
+                  <th>Hours</th>
+                  <th>Cycles</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="fleetTableBody">
+                <tr><td colspan="8">Loading...</td></tr>
+              </tbody>
+            </table>
           </div>
-          <div id="catalogList" class="catalog-list">Loading...</div>
-        </article>
-
-        <article class="card">
-          <div class="card-header">
-            <div>
-              <h2>Used market</h2>
-              <p>Aircraft listed for sale by other companies.</p>
-            </div>
-          </div>
-          <div id="usedMarketList" class="catalog-list">Loading...</div>
         </article>
       </section>
     </main>
   </div>
+
+  <dialog id="aircraftDetailDialog">
+    <form method="dialog" class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">Aircraft details</p>
+          <h2 id="aircraftDetailTitle">Aircraft</h2>
+        </div>
+        <button value="close" class="close-button" aria-label="Close">×</button>
+      </header>
+      <div id="aircraftDetailContent" class="dialog-body">Loading...</div>
+      <footer class="dialog-footer">
+        <button value="close">Close</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="aircraftImageDialog">
+    <form method="dialog" class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">Aircraft image</p>
+          <h2 id="aircraftImageTitle">Aircraft</h2>
+        </div>
+        <button value="close" class="close-button" aria-label="Close">×</button>
+      </header>
+      <div class="dialog-body image-dialog-body">
+        <img id="aircraftImagePreview" alt="Aircraft preview">
+      </div>
+      <footer class="dialog-footer">
+        <button value="close">Close</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="buyAircraftDialog">
+    <form method="dialog" class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">Aircraft market</p>
+          <h2>Buy new aircraft</h2>
+        </div>
+        <button value="close" class="close-button" aria-label="Close">×</button>
+      </header>
+
+      <div class="dialog-body">
+        <div class="info-box">
+          <strong>Pilot coverage rule</strong>
+          <p>
+            Pilots are a company pool. They are not assigned permanently to one aircraft,
+            but each operational aircraft requires coverage by two active qualified pilots.
+          </p>
+        </div>
+
+        <div id="buyAircraftError" class="page-error" hidden></div>
+        <div id="aircraftCatalogList">Loading catalog...</div>
+      </div>
+
+      <footer class="dialog-footer">
+        <button value="close">Close</button>
+      </footer>
+    </form>
+  </dialog>
 
   <script src="src/js/auth-guard.js"></script>
   <script src="src/js/fleet.js"></script>

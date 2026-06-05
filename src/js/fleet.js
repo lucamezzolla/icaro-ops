@@ -1,447 +1,366 @@
 const API = {
-  currentCompany: companyId => `api/public/company/current.php?companyId=${encodeURIComponent(companyId)}`,
-  myAircraft: companyId => `api/public/fleet/my-aircraft.php?companyId=${encodeURIComponent(companyId)}`,
-  models: companyId => `api/public/fleet/aircraft-models.php?companyId=${encodeURIComponent(companyId)}`,
-  buyNew: "api/public/fleet/buy-new.php",
-  usedMarket: companyId => `api/public/fleet/used-market.php?companyId=${encodeURIComponent(companyId)}`,
-  listForSale: "api/public/fleet/list-for-sale.php",
-  purchaseOffer: "api/public/fleet/purchase-offer.php"
+  fleet: "api/public/fleet/my-aircraft.php",
+  catalog: "api/public/fleet/catalog.php",
+  detail: id => `api/public/fleet/detail.php?aircraftId=${encodeURIComponent(id)}`,
+  buyNew: "api/public/fleet/buy-new.php"
 };
 
-const ACTIVE_COMPANY_KEY = "icaro_ops_active_company_id";
-
-let companyId = null;
-let company = null;
+let ownedAircraft = [];
+let catalogAircraft = [];
 
 document.addEventListener("DOMContentLoaded", async () => {
   startUtcClock();
-  bindAircraftImageDialog();
-  companyId = resolveCompanyId();
-
-  document.querySelector("#refreshButton")?.addEventListener("click", () => loadFleetPage());
-
-  if (!companyId) {
-    showError("No active company found. Create a company first, or open the dashboard once from your current session.");
-    return;
-  }
-
-  await loadFleetPage();
+  document.querySelector("#refreshButton")?.addEventListener("click", loadFleet);
+  document.querySelector("#buyAircraftButton")?.addEventListener("click", openBuyDialog);
+  await loadFleet();
 });
 
-async function loadFleetPage() {
-  hideError();
+async function loadFleet() {
+  hideFleetMessages();
 
   try {
-    company = await getJson(API.currentCompany(companyId));
-    persistActiveCompany(company.company_id);
-    renderCompany(company);
-    await Promise.all([
-      loadMyAircraft(),
-      loadCatalog(),
-      loadUsedMarket()
-    ]);
+    const data = await getJson(API.fleet);
+    ownedAircraft = data.aircraft || [];
+    renderSummary(data.summary || {}, ownedAircraft);
+    renderFleetTable(ownedAircraft);
   } catch (error) {
-    showError(error.message || "Unable to load fleet page.");
+    showFleetError(error.message || "Unable to load fleet.");
   }
 }
 
-function persistActiveCompany(companyId) {
-  if (!companyId) return;
+function renderSummary(summary, rows) {
+  const available = rows.filter(a => a.status === "AVAILABLE" || a.status === "PARKED").length;
+  const inFlight = rows.filter(a => a.status === "IN_FLIGHT").length;
+  const maintenance = rows.filter(a => a.status === "MAINTENANCE").length;
 
-  sessionStorage.setItem(ACTIVE_COMPANY_KEY, String(companyId));
-
-  const raw = sessionStorage.getItem("icaro_ops_company");
-  let payload = {};
-
-  if (raw) {
-    try {
-      payload = JSON.parse(raw);
-    } catch {
-      payload = {};
-    }
-  }
-
-  payload.company_id = Number(companyId);
-  sessionStorage.setItem("icaro_ops_company", JSON.stringify(payload));
-}
-
-function renderCompany(company) {
-  const airport = company.base_airport;
-
-  document.querySelector("#companySummary").innerHTML = `
-    ${summaryRow("Owner", company.owner_name)}
-    ${summaryRow("Company", company.company_name)}
-    ${summaryRow("Budget", `${money(company.budget_amount)} ${company.currency_code}`)}
-    ${summaryRow("Base", `${airport.icao_code}${airport.iata_code ? " / " + airport.iata_code : ""}`)}
-    ${summaryRow("Airport", airport.airport_name)}
-  `;
-
-  document.querySelector("#capacitySummary").innerHTML = `
-    ${summaryRow("Aircraft", `${airport.aircraft_owned_count} / ${airport.max_aircraft_managed}`)}
-    ${summaryRow("At base", `${airport.aircraft_at_base_count} / ${airport.max_aircraft_on_ground}`)}
-    ${summaryRow("In flight", airport.aircraft_in_flight_count)}
-    ${summaryRow("Maintenance", airport.aircraft_maintenance_count)}
-    ${summaryRow("Free fleet", airport.free_managed_aircraft_slots)}
-    ${summaryRow("Free ground", airport.free_ground_aircraft_slots)}
+  document.querySelector("#fleetSummary").innerHTML = `
+    ${summaryRow("Aircraft", summary.total_aircraft ?? rows.length)}
+    ${summaryRow("Available", available)}
+    ${summaryRow("In flight", inFlight)}
+    ${summaryRow("Maintenance", maintenance)}
+    ${summaryRow("Pilot pool", `${summary.qualified_pilots ?? "-"} / ${summary.required_pilots_for_current_fleet ?? "-"}`)}
   `;
 }
 
-async function loadMyAircraft() {
-  const rows = await getJson(API.myAircraft(companyId));
-  const shell = document.querySelector("#myAircraftTable");
+function renderFleetTable(rows) {
+  const tbody = document.querySelector("#fleetTableBody");
 
   if (!rows.length) {
-    shell.innerHTML = `<p class="muted">No aircraft yet. Buy a new aircraft or look at the used market.</p>`;
+    tbody.innerHTML = `<tr><td colspan="8">No owned aircraft yet.</td></tr>`;
     return;
   }
 
-  shell.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>Aircraft</th>
-          <th>Registration</th>
-          <th>Status</th>
-          <th>Base</th>
-          <th>Condition</th>
-          <th>Value</th>
-          <th>Image</th>
-          <th>Sale</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows.map(row => `
-          <tr>
-            <td>
-              <strong>${escapeHtml(row.manufacturer)} ${escapeHtml(row.model_name)}</strong>
-              <span>${escapeHtml(row.model_code)} · ${escapeHtml(row.operation_role)} · ${escapeHtml(row.aircraft_category)}</span>
-            </td>
-            <td>
-              <strong>${escapeHtml(row.registration_code)}</strong>
-              <span>${escapeHtml(row.manufacture_year)}</span>
-            </td>
-            <td><span class="badge">${escapeHtml(row.status)}</span></td>
-            <td>
-              <strong>${escapeHtml(row.home_base_icao_code)}</strong>
-              <span>${escapeHtml(row.current_airport_icao_code)}</span>
-            </td>
-            <td>${escapeHtml(row.condition_percent)}%</td>
-            <td>${money(row.current_market_value)} ${escapeHtml(row.currency_code)}</td>
-            <td>${aircraftImageButton(row)}
-              <a class="secondary aircraft-image-button" href="maintenance.html?aircraftId=${row.company_aircraft_id}">Maintenance</a></td>
-            <td>
-              ${row.is_available_for_sale
-                ? `<span class="badge">Listed ${money(row.asking_price)} ${escapeHtml(row.currency_code)}</span>`
-                : `<button type="button" data-sale-id="${row.company_aircraft_id}">List for sale</button>`
-              }
-            </td>
-          </tr>
-        `).join("")}
-      </tbody>
-    </table>
-  `;
+  tbody.innerHTML = rows.map(a => `
+    <tr>
+      <td><strong>${escapeHtml(a.registration_code)}</strong></td>
+      <td>${escapeHtml(a.manufacturer)} ${escapeHtml(a.model_name)}</td>
+      <td><span class="badge ${statusClass(a.status)}">${escapeHtml(a.status)}</span></td>
+      <td>${escapeHtml(a.current_airport_icao_code || "-")}</td>
+      <td class="${conditionClass(a.condition_percent)}">${escapeHtml(a.condition_percent ?? "-")}%</td>
+      <td>${escapeHtml(a.airframe_hours ?? "0")}</td>
+      <td>${escapeHtml(a.cycles_count ?? "0")}</td>
+      <td>
+        <div class="button-row">
+          <button type="button" data-aircraft-detail="${a.aircraft_id}">Details</button>
+          <button type="button" data-aircraft-image="${a.aircraft_id}" class="secondary">Image</button>
+          <a class="button-link" href="maintenance.html?aircraftId=${encodeURIComponent(a.aircraft_id)}">Maintenance</a>
+        </div>
+      </td>
+    </tr>
+  `).join("");
 
-  shell.querySelectorAll("[data-sale-id]").forEach(button => {
-    button.addEventListener("click", async () => {
-      const aircraftId = button.dataset.saleId;
-      const price = prompt("Asking price in company currency:");
+  tbody.querySelectorAll("[data-aircraft-detail]").forEach(button => {
+    button.addEventListener("click", () => openAircraftDetail(Number(button.dataset.aircraftDetail)));
+  });
 
-      if (!price) return;
-
-      await postJson(API.listForSale, {
-        company_aircraft_id: Number(aircraftId),
-        company_id: Number(companyId),
-        asking_price: Number(price)
-      });
-
-      await loadFleetPage();
-    });
+  tbody.querySelectorAll("[data-aircraft-image]").forEach(button => {
+    button.addEventListener("click", () => openAircraftImage(Number(button.dataset.aircraftImage)));
   });
 }
 
-async function loadCatalog() {
-  const rows = await getJson(API.models(companyId));
-  const list = document.querySelector("#catalogList");
+async function openAircraftDetail(aircraftId) {
+  const dialog = document.querySelector("#aircraftDetailDialog");
+  const title = document.querySelector("#aircraftDetailTitle");
+  const content = document.querySelector("#aircraftDetailContent");
+
+  title.textContent = "Aircraft";
+  content.textContent = "Loading...";
+  dialog.showModal();
+
+  try {
+    const data = await getJson(API.detail(aircraftId));
+    const a = data.aircraft;
+    title.textContent = `${a.registration_code} · ${a.manufacturer} ${a.model_name}`;
+    content.innerHTML = renderAircraftDetail(a, data.recent_flights || []);
+  } catch (error) {
+    content.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load aircraft detail.")}</div>`;
+  }
+}
+
+function renderAircraftDetail(a, recentFlights) {
+  return `
+    <div class="detail-grid">
+      ${section("Identity", [
+        ["Registration", a.registration_code],
+        ["Serial", a.serial_number],
+        ["Aircraft", `${a.manufacturer} ${a.model_name}`],
+        ["Model code", a.model_code],
+        ["ICAO type", a.icao_type_code],
+        ["Operation role", a.operation_role]
+      ])}
+      ${section("Status", [
+        ["Status", a.status],
+        ["Home base", a.home_base_icao_code],
+        ["Current airport", a.current_airport_icao_code],
+        ["Condition", `${a.condition_percent}%`],
+        ["Airframe hours", a.airframe_hours],
+        ["Cycles", a.cycles_count]
+      ])}
+      ${section("Performance", [
+        ["Passenger capacity", a.passenger_capacity_standard],
+        ["Range", `${a.range_km} km`],
+        ["Cruise speed", `${a.cruise_speed_kmh} km/h`],
+        ["Fuel burn", `${a.fuel_burn_kg_per_hour} kg/h`],
+        ["Maintenance cost/h", `${money(a.maintenance_cost_per_hour)} ${a.currency_code || "EUR"}`]
+      ])}
+      ${section("Financial", [
+        ["Ownership", a.ownership_status],
+        ["Acquisition", a.acquisition_type],
+        ["Purchase price", `${money(a.purchase_price)} ${a.currency_code || "EUR"}`],
+        ["Market value", `${money(a.current_market_value)} ${a.currency_code || "EUR"}`]
+      ])}
+      <section class="detail-section">
+        <h3>Recent flights</h3>
+        ${
+          recentFlights.length
+            ? `<dl class="detail-list">${recentFlights.map(f => `
+              ${detailRow(f.flight_code, `${f.origin_airport_icao_code} → ${f.destination_airport_icao_code} · ${f.status} · ${money(f.profit_amount)} ${f.currency_code}`)}
+            `).join("")}</dl>`
+            : `<p class="muted">No recent flights found.</p>`
+        }
+      </section>
+      <section class="detail-section">
+        <h3>Pilot coverage</h3>
+        <p class="muted">
+          This aircraft does not have permanently assigned pilots. It is covered by the company pool of active qualified pilots.
+          Dispatch will use available qualified pilots for each flight.
+        </p>
+      </section>
+    </div>
+  `;
+}
+
+function openAircraftImage(aircraftId) {
+  const a = ownedAircraft.find(item => Number(item.aircraft_id) === Number(aircraftId));
+  if (!a) return;
+
+  const dialog = document.querySelector("#aircraftImageDialog");
+  document.querySelector("#aircraftImageTitle").textContent = `${a.manufacturer} ${a.model_name}`;
+  const img = document.querySelector("#aircraftImagePreview");
+  img.src = a.image_asset_path || "";
+  img.alt = `${a.manufacturer} ${a.model_name}`;
+  dialog.showModal();
+}
+
+async function openBuyDialog() {
+  const dialog = document.querySelector("#buyAircraftDialog");
+  const list = document.querySelector("#aircraftCatalogList");
+  document.querySelector("#buyAircraftError").hidden = true;
+  list.textContent = "Loading catalog...";
+  dialog.showModal();
+
+  try {
+    const data = await getJson(API.catalog);
+    catalogAircraft = data.aircraft || [];
+    renderCatalog(catalogAircraft, data.pilot_coverage || {});
+  } catch (error) {
+    list.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load aircraft catalog.")}</div>`;
+  }
+}
+
+function renderCatalog(rows, pilotCoverage) {
+  const list = document.querySelector("#aircraftCatalogList");
 
   if (!rows.length) {
-    list.innerHTML = `<p class="muted">No aircraft models available.</p>`;
+    list.innerHTML = `<p class="muted">No aircraft catalog entries available.</p>`;
     return;
   }
 
-  list.innerHTML = rows.map(model => `
-    <article class="catalog-item">
-      ${aircraftThumb(model)}
-      <h3>${escapeHtml(model.manufacturer)} ${escapeHtml(model.model_name)}</h3>
-      <p>${escapeHtml(model.operation_role)} · ${escapeHtml(model.aircraft_category)}</p>
-      <div class="catalog-metrics">
-        <div><strong>${escapeHtml(model.passenger_capacity_standard)}</strong><span>Passengers</span></div>
-        <div><strong>${escapeHtml(model.cargo_capacity_kg)} kg</strong><span>Cargo</span></div>
-        <div><strong>${escapeHtml(model.range_km)} km</strong><span>Range</span></div>
-        <div><strong>${escapeHtml(model.required_runway_m)} m</strong><span>Runway</span></div>
-      </div>
-      <p><strong>${money(model.new_purchase_price)} ${escapeHtml(model.currency_code)}</strong></p>
-      <div class="catalog-actions">
-        ${aircraftImageButton(model)}
-        <button type="button" data-buy-model="${model.aircraft_model_id}" ${model.can_buy ? "" : "disabled"}>
-          ${model.can_buy ? "Buy new" : model.block_reason || "Unavailable"}
-        </button>
-      </div>
-    </article>
-  `).join("");
+  list.innerHTML = `
+    <div class="info-box">
+      <strong>Current pilot coverage</strong>
+      <p>
+        Qualified pilots: ${escapeHtml(pilotCoverage.current_qualified_pilots ?? "-")}.
+        Required for current fleet: ${escapeHtml(pilotCoverage.required_pilots_for_current_fleet ?? "-")}.
+      </p>
+    </div>
+    <div class="catalog-grid">
+      ${rows.map(a => `
+        <article class="catalog-card">
+          <h3>${escapeHtml(a.manufacturer)} ${escapeHtml(a.model_name)}</h3>
+          <p>${escapeHtml(a.model_code)} · ${escapeHtml(a.icao_type_code)} · ${escapeHtml(a.operation_role || "-")}</p>
+          <p>Capacity: <strong>${escapeHtml(a.passenger_capacity_standard)}</strong> · Range: <strong>${escapeHtml(a.range_km)} km</strong></p>
+          <p>Price: <strong>${money(a.new_purchase_price || a.estimated_new_price || a.purchase_price || 0)} ${escapeHtml(a.currency_code || "EUR")}</strong></p>
+          <p class="muted">After purchase pilot need: ${escapeHtml(a.required_pilots_after_purchase ?? "-")} · Current qualified: ${escapeHtml(a.current_qualified_pilots ?? "-")}</p>
+          <div class="catalog-actions">
+            <button type="button" data-buy-model="${a.aircraft_model_id || a.id}">Buy new</button>
+          </div>
+        </article>
+      `).join("")}
+    </div>
+  `;
 
   list.querySelectorAll("[data-buy-model]").forEach(button => {
-    button.addEventListener("click", async () => {
-      const modelId = Number(button.dataset.buyModel);
-
-      if (!confirm("Buy this aircraft new?")) return;
-
-      await postJson(API.buyNew, {
-        company_id: Number(companyId),
-        aircraft_model_id: modelId
-      });
-
-      await loadFleetPage();
-    });
+    button.addEventListener("click", () => buyAircraft(Number(button.dataset.buyModel)));
   });
 }
 
-async function loadUsedMarket() {
-  const rows = await getJson(API.usedMarket(companyId));
-  const list = document.querySelector("#usedMarketList");
+async function buyAircraft(aircraftModelId) {
+  const error = document.querySelector("#buyAircraftError");
+  error.hidden = true;
+  error.textContent = "";
 
-  if (!rows.length) {
-    list.innerHTML = `<p class="muted">No used aircraft currently listed by other companies.</p>`;
+  if (!confirm("Buy this aircraft?")) {
     return;
   }
 
-  list.innerHTML = rows.map(row => `
-    <article class="catalog-item">
-      ${aircraftThumb(row)}
-      <h3>${escapeHtml(row.manufacturer)} ${escapeHtml(row.model_name)}</h3>
-      <p>${escapeHtml(row.registration_code)} · seller: ${escapeHtml(row.seller_company_name)}</p>
-      <div class="catalog-metrics">
-        <div><strong>${escapeHtml(row.condition_percent)}%</strong><span>Condition</span></div>
-        <div><strong>${escapeHtml(row.airframe_hours)}</strong><span>Hours</span></div>
-        <div><strong>${money(row.current_market_value)}</strong><span>Market value</span></div>
-        <div><strong>${money(row.asking_price)}</strong><span>Asking</span></div>
-      </div>
-      <div class="catalog-actions">
-        ${aircraftImageButton(row)}
-        <button type="button" data-offer-aircraft="${row.company_aircraft_id}">Make offer</button>
-      </div>
-    </article>
-  `).join("");
-
-  list.querySelectorAll("[data-offer-aircraft]").forEach(button => {
-    button.addEventListener("click", async () => {
-      const aircraftId = Number(button.dataset.offerAircraft);
-      const amount = prompt("Offer amount:");
-
-      if (!amount) return;
-
-      await postJson(API.purchaseOffer, {
-        aircraft_id: aircraftId,
-        buyer_company_id: Number(companyId),
-        offered_amount: Number(amount),
-        currency_code: company.currency_code
-      });
-
-      alert("Offer created.");
-      await loadUsedMarket();
-    });
-  });
-}
-
-function aircraftThumb(item) {
-  if (!item.image_asset_path) return "";
-
-  return `
-    <button type="button"
-      class="aircraft-thumb"
-      data-aircraft-image="${escapeHtml(item.image_asset_path)}"
-      data-aircraft-title="${escapeHtml(`${item.manufacturer} ${item.model_name}`)}"
-      data-aircraft-code="${escapeHtml(item.model_code)}">
-      <img src="${escapeHtml(item.image_asset_path)}" alt="${escapeHtml(`${item.manufacturer} ${item.model_name}`)}">
-    </button>
-  `;
-}
-
-function aircraftImageButton(item) {
-  return `
-    <button type="button"
-      class="secondary aircraft-image-button"
-      data-aircraft-image="${escapeHtml(item.image_asset_path || "")}"
-      data-aircraft-title="${escapeHtml(`${item.manufacturer} ${item.model_name}`)}"
-      data-aircraft-code="${escapeHtml(item.model_code || "")}">
-      Image
-    </button>
-  `;
-}
-
-function bindAircraftImageDialog() {
-  document.addEventListener("click", event => {
-    const button = event.target.closest("[data-aircraft-image]");
-    if (button) {
-      openAircraftImageDialog(
-        button.dataset.aircraftImage,
-        button.dataset.aircraftTitle,
-        button.dataset.aircraftCode
-      );
-      return;
-    }
-
-    if (
-      event.target.matches("#aircraftImageDialogClose") ||
-      event.target.matches("#aircraftImageDialogBackdrop")
-    ) {
-      closeAircraftImageDialog();
-    }
-  });
-
-  document.addEventListener("keydown", event => {
-    if (event.key === "Escape") {
-      closeAircraftImageDialog();
-    }
-  });
-}
-
-function openAircraftImageDialog(imagePath, title, code) {
-  let dialog = document.querySelector("#aircraftImageDialog");
-
-  if (!dialog) {
-    document.body.insertAdjacentHTML("beforeend", `
-      <div id="aircraftImageDialog" class="aircraft-image-dialog-shell" hidden>
-        <div id="aircraftImageDialogBackdrop" class="aircraft-image-dialog-backdrop"></div>
-        <section class="aircraft-image-dialog" role="dialog" aria-modal="true" aria-labelledby="aircraftImageDialogTitle">
-          <header>
-            <div>
-              <h2 id="aircraftImageDialogTitle"></h2>
-              <p id="aircraftImageDialogCode"></p>
-            </div>
-            <button id="aircraftImageDialogClose" type="button" aria-label="Close">×</button>
-          </header>
-          <div class="aircraft-image-dialog-body">
-            <img id="aircraftImageDialogImg" alt="">
-          </div>
-        </section>
-      </div>
-    `);
-    dialog = document.querySelector("#aircraftImageDialog");
-  }
-
-  const img = dialog.querySelector("#aircraftImageDialogImg");
-  const titleEl = dialog.querySelector("#aircraftImageDialogTitle");
-  const codeEl = dialog.querySelector("#aircraftImageDialogCode");
-
-  titleEl.textContent = title || "Aircraft";
-  codeEl.textContent = code || "";
-  img.src = imagePath || "";
-  img.alt = title || "Aircraft image";
-
-  dialog.hidden = false;
-}
-
-function closeAircraftImageDialog() {
-  const dialog = document.querySelector("#aircraftImageDialog");
-  if (dialog) {
-    dialog.hidden = true;
-  }
-}
-
-function resolveCompanyId() {
-  const active = sessionStorage.getItem(ACTIVE_COMPANY_KEY);
-  if (active) return active;
-
-  const raw = sessionStorage.getItem("icaro_ops_company");
-  if (!raw) return null;
-
   try {
-    const parsed = JSON.parse(raw);
-    return parsed.company_id || null;
-  } catch {
-    return null;
+    const result = await fleetPostJsonWithVisibleErrors(API.buyNew, { aircraft_model_id: aircraftModelId }, error);
+    showFleetSuccess(`Aircraft purchased: ${result.registration_code || "new aircraft"}`);
+    document.querySelector("#buyAircraftDialog").close();
+    await loadFleet();
+  } catch (err) {
+    error.hidden = false;
+    error.textContent = err.message || "Unable to buy aircraft.";
   }
 }
 
 async function getJson(url) {
-  const response = await fetch(url, {
-    headers: { "Accept": "application/json" }
-  });
-
+  const response = await fetch(url, { headers: { "Accept": "application/json" }, credentials: "same-origin" });
   const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(body?.message || body?.error || `Request failed: ${response.status}`);
-  }
-
+  if (!response.ok) throw new Error(body?.message || body?.error || `Request failed: ${response.status}`);
   return body;
 }
 
-async function postJson(url, payload) {
+async function fleetPostJsonWithVisibleErrors(url, payload, targetBox = null) {
+  hideFleetMessages();
+
   const response = await fetch(url, {
     method: "POST",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json"
-    },
+    headers: { "Accept": "application/json", "Content-Type": "application/json" },
+    credentials: "same-origin",
     body: JSON.stringify(payload)
   });
 
   const body = await response.json().catch(() => null);
 
   if (!response.ok) {
-    throw new Error(body?.message || body?.error || `Request failed: ${response.status}`);
+    const lines = [];
+    const code = body?.error || `HTTP_${response.status}`;
+
+    if (code === "INSUFFICIENT_QUALIFIED_PILOTS") {
+      lines.push("Pilot coverage is not sufficient for this purchase.");
+      lines.push("Pilots are a qualified company pool, not assigned permanently to a single aircraft.");
+    } else {
+      lines.push(body?.message || code || `Request failed: ${response.status}`);
+    }
+
+    if (body?.required_pilots_after_purchase !== undefined) {
+      lines.push(`Required qualified pilots after purchase: ${body.required_pilots_after_purchase}`);
+    }
+
+    if (body?.current_qualified_pilots !== undefined) {
+      lines.push(`Current qualified pilots: ${body.current_qualified_pilots}`);
+    }
+
+    if (body?.required_license) {
+      lines.push(`Required aircraft qualification: ${body.required_license}`);
+    }
+
+    const message = lines.join("\n");
+
+    if (targetBox) {
+      targetBox.hidden = false;
+      targetBox.textContent = message;
+    } else {
+      showFleetError(message);
+    }
+
+    throw new Error(message);
   }
 
   return body;
 }
 
+function showFleetError(message) {
+  const box = document.querySelector("#fleetPageError");
+  if (!box) return;
+  box.hidden = false;
+  box.textContent = message;
+}
+
+function showFleetSuccess(message) {
+  const box = document.querySelector("#fleetPageSuccess");
+  if (!box) return;
+  box.hidden = false;
+  box.textContent = message;
+}
+
+function hideFleetMessages() {
+  for (const selector of ["#fleetPageError", "#fleetPageSuccess"]) {
+    const box = document.querySelector(selector);
+    if (box) {
+      box.hidden = true;
+      box.textContent = "";
+    }
+  }
+}
+
+function section(title, rows) {
+  return `<section class="detail-section"><h3>${escapeHtml(title)}</h3><dl class="detail-list">${rows.map(([k,v]) => detailRow(k, v)).join("")}</dl></section>`;
+}
+
 function summaryRow(label, value) {
-  return `
-    <div>
-      <dt>${escapeHtml(label)}</dt>
-      <dd>${escapeHtml(value ?? "-")}</dd>
-    </div>
-  `;
+  return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? "-")}</dd></div>`;
+}
+
+function detailRow(label, value) {
+  return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? "-")}</dd></div>`;
 }
 
 function startUtcClock() {
   const clock = document.querySelector("#utcClock");
-
   function tick() {
-    const now = new Date();
-    clock.textContent = now.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+    clock.textContent = new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC";
   }
-
   tick();
   setInterval(tick, 1000);
 }
 
 function money(value) {
-  const numeric = Number(value ?? 0);
-  return numeric.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
+  return Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function showError(message) {
-  const error = document.querySelector("#pageError");
-  error.hidden = false;
-  error.textContent = message;
+function statusClass(status) {
+  const s = String(status || "");
+  if (s === "AVAILABLE" || s === "PARKED") return "good";
+  if (s === "IN_FLIGHT") return "warn";
+  if (s === "MAINTENANCE") return "bad";
+  return "";
 }
 
-function hideError() {
-  const error = document.querySelector("#pageError");
-  error.hidden = true;
-  error.textContent = "";
+function conditionClass(value) {
+  const n = Number(value || 0);
+  if (n <= 45) return "condition-bad";
+  if (n <= 70) return "condition-warn";
+  return "condition-ok";
 }
 
 function escapeHtml(value) {
   return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
 }
