@@ -4,7 +4,6 @@ declare(strict_types=1);
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
 require __DIR__ . '/../../lib/flight-completion.php';
-require __DIR__ . '/../../lib/reputation.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['error' => 'METHOD_NOT_ALLOWED'], 405);

@@ -4,7 +4,6 @@ declare(strict_types=1);
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
 require __DIR__ . '/../../lib/flight-completion.php';
-require __DIR__ . '/../../lib/reputation.php';
 
 $session = require_auth_session();
 $companyId = $session['company_id'];
