@@ -10,17 +10,20 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $session = require_auth_session();
 $companyId = $session['company_id'];
-
 $payload = read_json_body();
 
-$origin = strtoupper(trim((string)($payload['origin_airport_icao_code'] ?? 'LIRA')));
-$destination = strtoupper(trim((string)($payload['destination_airport_icao_code'] ?? 'LIML')));
+$origin = strtoupper(trim((string)($payload['origin_airport_icao_code'] ?? '')));
+$destination = strtoupper(trim((string)($payload['destination_airport_icao_code'] ?? '')));
 $departureTime = trim((string)($payload['scheduled_departure_time_utc'] ?? '10:00'));
 $ticketPrice = (float)($payload['ticket_price'] ?? 145.00);
 $aircraftId = (int)($payload['aircraft_id'] ?? 0);
 
 if (!preg_match('/^[A-Z0-9]{4}$/', $origin) || !preg_match('/^[A-Z0-9]{4}$/', $destination)) {
     json_response(['error' => 'INVALID_AIRPORT_CODE'], 422);
+}
+
+if ($origin === $destination) {
+    json_response(['error' => 'INVALID_ROUTE', 'message' => 'Origin and destination must be different.'], 422);
 }
 
 if (!preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $departureTime)) {
@@ -36,12 +39,7 @@ $pdo = db();
 try {
     $pdo->beginTransaction();
 
-    $companyStmt = $pdo->prepare("
-        SELECT id, currency_code, base_airport_icao_code
-        FROM companies
-        WHERE id = :company_id
-        LIMIT 1
-    ");
+    $companyStmt = $pdo->prepare('SELECT id, currency_code FROM companies WHERE id = :company_id LIMIT 1');
     $companyStmt->execute(['company_id' => $companyId]);
     $company = $companyStmt->fetch();
 
@@ -50,12 +48,6 @@ try {
         json_response(['error' => 'COMPANY_NOT_FOUND'], 404);
     }
 
-    $airportStmt = $pdo->prepare("
-        SELECT icao_code, name, latitude, longitude
-        FROM airports
-        WHERE icao_code IN (:origin, :destination)
-    ");
-    // MariaDB/PDO named placeholders cannot be reused in all modes; use direct two queries.
     $originAirport = fetch_airport($pdo, $origin);
     $destinationAirport = fetch_airport($pdo, $destination);
 
@@ -69,31 +61,10 @@ try {
         json_response(['error' => 'AIRPORT_COORDINATES_MISSING'], 409);
     }
 
-    if ($aircraftId <= 0) {
-        $aircraftStmt = $pdo->prepare("
-            SELECT ca.id
-            FROM company_aircraft ca
-            JOIN aircraft_models am
-              ON am.id = ca.aircraft_model_id
-            WHERE ca.company_id = :company_id
-              AND ca.status IN ('AVAILABLE', 'PARKED')
-              AND ca.home_base_icao_code = :origin
-              AND am.model_code = 'C208B_GRAND_CARAVAN_EX'
-            ORDER BY ca.id
-            LIMIT 1
-        ");
-        $aircraftStmt->execute([
-            'company_id' => $companyId,
-            'origin' => $origin,
-        ]);
-        $aircraftId = (int)($aircraftStmt->fetchColumn() ?: 0);
-    }
-
-    $aircraft = fetch_aircraft($pdo, $companyId, $aircraftId);
-
-    if (!$aircraft) {
+    $model = fetch_c208_model($pdo);
+    if (!$model) {
         $pdo->rollBack();
-        json_response(['error' => 'NO_AVAILABLE_AIRCRAFT', 'message' => 'No available Cessna 208B at the origin airport.'], 409);
+        json_response(['error' => 'AIRCRAFT_MODEL_NOT_FOUND'], 500);
     }
 
     $distanceKm = haversine_km(
@@ -103,69 +74,37 @@ try {
         (float)$destinationAirport['longitude']
     );
 
-    if ($distanceKm > (float)$aircraft['range_km']) {
+    if ($distanceKm > (float)$model['range_km']) {
         $pdo->rollBack();
-        json_response(['error' => 'ROUTE_OUT_OF_RANGE'], 409);
+        json_response(['error' => 'ROUTE_OUT_OF_RANGE', 'message' => 'The route distance is outside Cessna 208B range.'], 409);
     }
 
-    $durationMinutes = max(20, (int)ceil(($distanceKm / max(1, (float)$aircraft['cruise_speed_kmh'])) * 60 + 15));
+    $durationMinutes = max(20, (int)ceil(($distanceKm / max(1, (float)$model['cruise_speed_kmh'])) * 60 + 15));
+
+    // Important: route planning is not dispatch.
+    // Prefer an aircraft at origin if available, otherwise assign any owned C208,
+    // even if it is currently in flight or elsewhere. If none exists, keep NULL.
+    if ($aircraftId <= 0) {
+        $aircraftId = find_preferred_c208_aircraft_id($pdo, $companyId, $origin);
+    } elseif (!company_owns_aircraft($pdo, $companyId, $aircraftId)) {
+        $pdo->rollBack();
+        json_response(['error' => 'AIRCRAFT_NOT_OWNED'], 403);
+    }
 
     $pilots = fetch_eligible_pilots($pdo, $companyId);
     $technician = fetch_eligible_technician($pdo, $companyId);
 
-    if (count($pilots) < 2) {
-        $pdo->rollBack();
-        json_response(['error' => 'MISSING_PILOTS', 'message' => 'Two active pilots with CPL and C208_TYPE are required.'], 409);
-    }
-
-    if (!$technician) {
-        $pdo->rollBack();
-        json_response(['error' => 'MISSING_TECHNICIAN', 'message' => 'One active technician with C208_MAINT is required.'], 409);
-    }
-
-    $insert = $pdo->prepare("
-        INSERT INTO company_routes (
-          company_id,
-          aircraft_id,
-          origin_airport_icao_code,
-          destination_airport_icao_code,
-          scheduled_departure_time_utc,
-          recurrence_type,
-          assigned_pilot_1_id,
-          assigned_pilot_2_id,
-          assigned_technician_id,
-          planned_distance_km,
-          planned_duration_minutes,
-          ticket_price,
-          currency_code,
-          status
-        ) VALUES (
-          :company_id,
-          :aircraft_id,
-          :origin,
-          :destination,
-          :departure_time,
-          'DAILY',
-          :pilot_1,
-          :pilot_2,
-          :technician,
-          :distance_km,
-          :duration_minutes,
-          :ticket_price,
-          :currency_code,
-          'ACTIVE'
-        )
-    ");
+    $insert = $pdo->prepare("\n        INSERT INTO company_routes (\n          company_id, aircraft_id, origin_airport_icao_code, destination_airport_icao_code,\n          scheduled_departure_time_utc, recurrence_type,\n          assigned_pilot_1_id, assigned_pilot_2_id, assigned_technician_id,\n          planned_distance_km, planned_duration_minutes, ticket_price, currency_code, status\n        ) VALUES (\n          :company_id, :aircraft_id, :origin, :destination,\n          :departure_time, 'DAILY',\n          :pilot_1, :pilot_2, :technician,\n          :distance_km, :duration_minutes, :ticket_price, :currency_code, 'ACTIVE'\n        )\n    ");
 
     $insert->execute([
         'company_id' => $companyId,
-        'aircraft_id' => $aircraftId,
+        'aircraft_id' => $aircraftId > 0 ? $aircraftId : null,
         'origin' => $origin,
         'destination' => $destination,
         'departure_time' => $departureTime,
-        'pilot_1' => (int)$pilots[0]['id'],
-        'pilot_2' => (int)$pilots[1]['id'],
-        'technician' => (int)$technician['id'],
+        'pilot_1' => $pilots[0]['id'] ?? null,
+        'pilot_2' => $pilots[1]['id'] ?? null,
+        'technician' => $technician['id'] ?? null,
         'distance_km' => number_format($distanceKm, 2, '.', ''),
         'duration_minutes' => $durationMinutes,
         'ticket_price' => $ticketPrice,
@@ -173,7 +112,6 @@ try {
     ]);
 
     $routeId = (int)$pdo->lastInsertId();
-
     $pdo->commit();
 
     json_response([
@@ -183,101 +121,59 @@ try {
         'scheduled_departure_time_utc' => $departureTime,
         'planned_distance_km' => number_format($distanceKm, 2, '.', ''),
         'planned_duration_minutes' => $durationMinutes,
-        'aircraft_registration_code' => $aircraft['registration_code'],
-        'pilot_1_name' => $pilots[0]['display_name'],
-        'pilot_2_name' => $pilots[1]['display_name'],
-        'technician_name' => $technician['display_name'],
+        'aircraft_id' => $aircraftId > 0 ? $aircraftId : null,
+        'pilot_1_name' => $pilots[0]['display_name'] ?? null,
+        'pilot_2_name' => $pilots[1]['display_name'] ?? null,
+        'technician_name' => $technician['display_name'] ?? null,
+        'message' => 'Route created. Aircraft availability will be checked at dispatch time.',
     ], 201);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
-
-    json_response([
-        'error' => 'DATABASE_ERROR',
-        'message' => 'Unable to create route.',
-    ], 500);
+    json_response(['error' => 'DATABASE_ERROR', 'message' => 'Unable to create route.'], 500);
 }
 
 function fetch_airport(PDO $pdo, string $icao): ?array
 {
-    $stmt = $pdo->prepare("SELECT icao_code, name, latitude, longitude FROM airports WHERE icao_code = :icao LIMIT 1");
+    $stmt = $pdo->prepare('SELECT icao_code, name, latitude, longitude FROM airports WHERE icao_code = :icao LIMIT 1');
     $stmt->execute(['icao' => $icao]);
     $row = $stmt->fetch();
     return $row ?: null;
 }
 
-function fetch_aircraft(PDO $pdo, int $companyId, int $aircraftId): ?array
+function fetch_c208_model(PDO $pdo): ?array
 {
-    $stmt = $pdo->prepare("
-        SELECT
-          ca.id,
-          ca.registration_code,
-          ca.status,
-          ca.home_base_icao_code,
-          am.model_code,
-          am.passenger_capacity_standard,
-          am.cruise_speed_kmh,
-          am.range_km,
-          am.fuel_burn_kg_per_hour,
-          am.maintenance_cost_per_hour
-        FROM company_aircraft ca
-        JOIN aircraft_models am
-          ON am.id = ca.aircraft_model_id
-        WHERE ca.id = :aircraft_id
-          AND ca.company_id = :company_id
-          AND ca.status IN ('AVAILABLE', 'PARKED')
-        LIMIT 1
-    ");
-    $stmt->execute([
-        'aircraft_id' => $aircraftId,
-        'company_id' => $companyId,
-    ]);
+    $stmt = $pdo->prepare("SELECT id, model_code, cruise_speed_kmh, range_km FROM aircraft_models WHERE model_code = 'C208B_GRAND_CARAVAN_EX' LIMIT 1");
+    $stmt->execute();
     $row = $stmt->fetch();
     return $row ?: null;
 }
 
+function find_preferred_c208_aircraft_id(PDO $pdo, int $companyId, string $origin): int
+{
+    $stmt = $pdo->prepare("\n        SELECT ca.id\n        FROM company_aircraft ca\n        JOIN aircraft_models am ON am.id = ca.aircraft_model_id\n        WHERE ca.company_id = :company_id\n          AND am.model_code = 'C208B_GRAND_CARAVAN_EX'\n        ORDER BY\n          CASE WHEN ca.current_airport_icao_code = :origin AND ca.status IN ('AVAILABLE', 'PARKED') THEN 0 ELSE 1 END,\n          ca.id\n        LIMIT 1\n    ");
+    $stmt->execute(['company_id' => $companyId, 'origin' => $origin]);
+    return (int)($stmt->fetchColumn() ?: 0);
+}
+
+function company_owns_aircraft(PDO $pdo, int $companyId, int $aircraftId): bool
+{
+    $stmt = $pdo->prepare('SELECT id FROM company_aircraft WHERE id = :aircraft_id AND company_id = :company_id LIMIT 1');
+    $stmt->execute(['aircraft_id' => $aircraftId, 'company_id' => $companyId]);
+    return (bool)$stmt->fetchColumn();
+}
+
 function fetch_eligible_pilots(PDO $pdo, int $companyId): array
 {
-    $stmt = $pdo->prepare("
-        SELECT s.id, s.display_name, s.salary_per_flight, s.revenue_share_percent
-        FROM company_staff s
-        WHERE s.company_id = :company_id
-          AND s.staff_role = 'PILOT'
-          AND s.employment_status = 'ACTIVE'
-          AND EXISTS (
-            SELECT 1 FROM company_staff_licenses l
-            WHERE l.company_staff_id = s.id
-              AND l.license_code = 'CPL'
-          )
-          AND EXISTS (
-            SELECT 1 FROM company_staff_licenses l
-            WHERE l.company_staff_id = s.id
-              AND l.license_code = 'C208_TYPE'
-          )
-        ORDER BY s.reliability_score DESC, s.fatigue_score ASC, s.id
-        LIMIT 2
-    ");
+    $stmt = $pdo->prepare("\n        SELECT s.id, s.display_name\n        FROM company_staff s\n        WHERE s.company_id = :company_id\n          AND s.staff_role = 'PILOT'\n          AND s.employment_status = 'ACTIVE'\n          AND EXISTS (SELECT 1 FROM company_staff_licenses l WHERE l.company_staff_id = s.id AND l.license_code = 'CPL')\n          AND EXISTS (SELECT 1 FROM company_staff_licenses l WHERE l.company_staff_id = s.id AND l.license_code = 'C208_TYPE')\n        ORDER BY s.reliability_score DESC, s.fatigue_score ASC, s.id\n        LIMIT 2\n    ");
     $stmt->execute(['company_id' => $companyId]);
     return $stmt->fetchAll();
 }
 
 function fetch_eligible_technician(PDO $pdo, int $companyId): ?array
 {
-    $stmt = $pdo->prepare("
-        SELECT s.id, s.display_name, s.daily_retainer
-        FROM company_staff s
-        WHERE s.company_id = :company_id
-          AND s.staff_role = 'TECHNICIAN'
-          AND s.employment_status = 'ACTIVE'
-          AND EXISTS (
-            SELECT 1 FROM company_staff_licenses l
-            WHERE l.company_staff_id = s.id
-              AND l.license_code = 'C208_MAINT'
-          )
-        ORDER BY s.reliability_score DESC, s.fatigue_score ASC, s.id
-        LIMIT 1
-    ");
+    $stmt = $pdo->prepare("\n        SELECT s.id, s.display_name\n        FROM company_staff s\n        WHERE s.company_id = :company_id\n          AND s.staff_role = 'TECHNICIAN'\n          AND s.employment_status = 'ACTIVE'\n          AND EXISTS (SELECT 1 FROM company_staff_licenses l WHERE l.company_staff_id = s.id AND l.license_code = 'C208_MAINT')\n        ORDER BY s.reliability_score DESC, s.fatigue_score ASC, s.id\n        LIMIT 1\n    ");
     $stmt->execute(['company_id' => $companyId]);
     $row = $stmt->fetch();
     return $row ?: null;
