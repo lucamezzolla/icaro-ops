@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icaro Ops - Flight Log</title>
+  <link rel="stylesheet" href="src/css/flight-log.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">IO</div>
+        <div><strong>Icaro Ops</strong><span>Flight Log</span></div>
+      </div>
+      <section class="panel">
+        <h2>Flight Log</h2>
+        <p class="muted">Historical record of flights, revenue, costs and operational results.</p>
+      </section>
+      <section class="panel">
+        <dl id="flightLogSummary" class="summary-list">
+          <div><dt>Total</dt><dd>Loading...</dd></div>
+        </dl>
+      </section>
+    </aside>
+
+    <main class="content-shell">
+      <header class="topbar">
+                <nav>
+          <a href="index.html">Map</a>
+          <a href="fleet.html">Fleet</a>
+          <a href="staff.html">Staff</a>
+          <a href="routes.html">Routes</a>
+          <a href="flight-log.html" class="active">Flight Log</a>
+          <a href="mailbox.html">Mailbox</a>
+          <a href="#">Finance</a>
+          <a href="settings.html">Settings</a>
+        </nav>
+        <div id="utcClock" class="utc-clock">---- -- -- --:--:-- UTC</div>
+      </header>
+
+      <section class="page-header">
+        <p class="eyebrow">Operations</p>
+        <h1>Flight Log</h1>
+        <p>Compact flight history. Open a row to inspect all available flight data.</p>
+      </section>
+
+      <div id="pageError" class="page-error" hidden></div>
+
+      <section class="log-grid">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>Flights</h2>
+              <p>Newest first.</p>
+            </div>
+            <button id="refreshButton" type="button">Refresh</button>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Flight</th>
+                  <th>Route</th>
+                  <th>Status</th>
+                  <th>Departure UTC</th>
+                  <th>Arrival UTC</th>
+                  <th>Aircraft</th>
+                  <th>Profit</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="flightLogTableBody">
+                <tr><td colspan="8">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="flightDetailDialog">
+    <form method="dialog" class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">Flight details</p>
+          <h2 id="dialogTitle">Flight</h2>
+        </div>
+        <button value="close" class="close-button" aria-label="Close">×</button>
+      </header>
+      <div id="flightDetailContent">Loading...</div>
+      <footer class="dialog-footer">
+        <button value="close">Close</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="src/js/auth-guard.js"></script>
+  <script src="src/js/flight-log.js"></script>
+</body>
+</html>
