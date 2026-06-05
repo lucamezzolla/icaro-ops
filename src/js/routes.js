@@ -7,6 +7,7 @@ const API = {
 };
 
 let routes = [];
+let lastSuggestedTicketPrice = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
   startUtcClock();
@@ -14,6 +15,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#addRouteButton")?.addEventListener("click", openAddRouteDialog);
   document.querySelector("#previewRouteButton")?.addEventListener("click", previewRoute);
   document.querySelector("#saveRouteButton")?.addEventListener("click", saveRoute);
+  setupTicketSuggestion();
   await loadRoutes();
 });
 
@@ -92,30 +94,45 @@ function openAddRouteDialog() {
   document.querySelector("#originAirport").value = "";
   document.querySelector("#destinationAirport").value = "";
   document.querySelector("#scheduledTime").value = "10:00";
-  document.querySelector("#ticketPrice").value = "250.00";
+  document.querySelector("#ticketPrice").value = "0.00";
   document.querySelector("#routePreviewPanel").hidden = true;
   document.querySelector("#routeDialogError").hidden = true;
 
   dialog.showModal();
 }
 
-async function previewRoute() {
+async function previewRoute(options = {}) {
   const payload = routeFormPayload();
+  const silent = Boolean(options.silent);
   const error = document.querySelector("#routeDialogError");
   const panel = document.querySelector("#routePreviewPanel");
   const content = document.querySelector("#routePreviewContent");
 
   error.hidden = true;
-  panel.hidden = false;
-  content.textContent = "Calculating preview...";
+
+  if (!silent) {
+    panel.hidden = false;
+    content.textContent = "Calculating preview...";
+  }
 
   try {
     const preview = await postJson(API.preview, payload);
-    content.innerHTML = renderPreview(preview);
+    lastSuggestedTicketPrice = Number(preview.suggested_ticket_price || 0);
+
+    if (Number(payload.ticket_price || 0) <= 0 && lastSuggestedTicketPrice > 0) {
+      document.querySelector("#ticketPrice").value = lastSuggestedTicketPrice.toFixed(2);
+    }
+
+    if (!silent) {
+      panel.hidden = false;
+      content.innerHTML = renderPreview(preview);
+    }
   } catch (err) {
-    panel.hidden = true;
-    error.hidden = false;
-    error.textContent = err.message || "Unable to preview route.";
+    if (!silent) {
+      panel.hidden = true;
+      error.hidden = false;
+      error.textContent = err.message || "Unable to preview route.";
+    }
   }
 }
 
@@ -235,6 +252,49 @@ async function openRouteDetail(routeId) {
 function section(title, rows) {
   return `<section class="detail-section"><h3>${escapeHtml(title)}</h3><dl class="detail-list">${rows.map(([k,v]) => detailRow(k, v)).join("")}</dl></section>`;
 }
+
+
+function setupTicketSuggestion() {
+  const origin = document.querySelector("#originAirport");
+  const destination = document.querySelector("#destinationAirport");
+  const ticket = document.querySelector("#ticketPrice");
+
+  if (!origin || !destination || !ticket || ticket.dataset.suggestionBound) {
+    return;
+  }
+
+  ticket.dataset.suggestionBound = "true";
+
+  const maybeSuggest = debounce(async () => {
+    const originValue = origin.value.trim().toUpperCase();
+    const destinationValue = destination.value.trim().toUpperCase();
+
+    if (originValue.length !== 4 || destinationValue.length !== 4 || originValue === destinationValue) {
+      return;
+    }
+
+    if (Number(ticket.value || 0) > 0) {
+      return;
+    }
+
+    await previewRoute({ silent: true });
+  }, 450);
+
+  origin.addEventListener("input", maybeSuggest);
+  destination.addEventListener("input", maybeSuggest);
+  origin.addEventListener("blur", maybeSuggest);
+  destination.addEventListener("blur", maybeSuggest);
+}
+
+function debounce(callback, waitMs) {
+  let timeoutId = null;
+
+  return (...args) => {
+    window.clearTimeout(timeoutId);
+    timeoutId = window.setTimeout(() => callback(...args), waitMs);
+  };
+}
+
 
 async function getJson(url) {
   const response = await fetch(url, { headers: { "Accept": "application/json" }, credentials: "same-origin" });

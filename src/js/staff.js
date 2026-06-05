@@ -50,7 +50,7 @@ function renderStaff(rows) {
       <td><span class="badge ${s.employment_status === "ACTIVE" ? "good" : "warn"}">${escapeHtml(s.employment_status || "-")}</span></td>
       <td>${escapeHtml(s.reliability_score ?? "-")}</td>
       <td>${escapeHtml(s.fatigue_score ?? "-")}</td>
-      <td>${costProfile(s)}</td>
+      <td>${staffCostProfile(s)}</td>
       <td><button type="button" data-staff-detail="${s.company_staff_id || s.staff_id || s.id}">Details</button></td>
     </tr>
   `).join("");
@@ -89,8 +89,8 @@ async function openStaffDetail(staffId) {
           ["Stress", staff.stress_score]
         ])}
         ${section("Compensation", [
-          ["Salary per flight", `${money(staff.salary_per_flight)} ${staff.currency_code || "EUR"}`],
-          ["Revenue share", `${staff.revenue_share_percent || 0}%`]
+          ["Indicative leg fee", `${money(staff.salary_per_flight)} ${staff.currency_code || "EUR"}`],
+          ["Revenue share estimate", `${staff.revenue_share_percent || 0}%`]
         ])}
         <section class="detail-section">
           <h3>Licenses</h3>
@@ -113,7 +113,15 @@ async function openStaffDetail(staffId) {
 async function openAddStaffDialog() {
   const dialog = document.querySelector("#addStaffDialog");
   const list = document.querySelector("#candidateList");
-  list.textContent = "Loading candidates...";
+  list.innerHTML = `
+    <div class="info-box staff-policy-box">
+      <strong>Operational staffing policy</strong>
+      <p>2 active qualified pilots are required for each operational aircraft.</p>
+      <p>Recommended maintenance coverage: 1 qualified technician every 3 aircraft.</p>
+      <p>Candidate costs are indicative estimates and may evolve with contracts, experience, fatigue, morale and company policy.</p>
+    </div>
+    <p class="muted">Loading candidates...</p>
+  `;
   dialog.showModal();
 
   try {
@@ -127,7 +135,11 @@ async function openAddStaffDialog() {
       <article class="candidate-card">
         <div>
           <strong>${escapeHtml(c.display_name || c.full_name || "-")}</strong>
-          <p class="muted">${escapeHtml(c.staff_role || "-")} · Reliability ${escapeHtml(c.reliability_score ?? "-")} · Salary ${money(c.salary_per_flight || 0)} ${escapeHtml(c.currency_code || "EUR")}</p>
+          <p class="muted">
+            ${escapeHtml(c.staff_role || "-")} · Reliability ${escapeHtml(c.reliability_score ?? "-")} ·
+            Indicative cost: ${candidateCostProfile(c)}
+          </p>
+          <p class="muted">Licenses: ${escapeHtml(c.licenses || "-")}</p>
         </div>
         <button type="button" data-hire-candidate="${c.candidate_id || c.id}">Hire</button>
       </article>
@@ -185,3 +197,25 @@ function costProfile(staff) {
 
   return `${money(staff.salary_per_flight || 0)} ${currency}/leg + ${money(staff.hourly_rate || 0)} ${currency}/h + ${staff.revenue_share_percent || 0}% rev.`;
 }
+
+
+function staffCostProfile(staff) {
+  const currency = staff.currency_code || "EUR";
+
+  if (staff.staff_role === "TECHNICIAN") {
+    return `est. ${money(staff.daily_retainer || 0)} ${currency}/day + ${money(staff.hourly_rate || 0)} ${currency}/h maintenance`;
+  }
+
+  return `est. ${money(staff.salary_per_flight || 0)} ${currency}/leg + ${money(staff.hourly_rate || 0)} ${currency}/h + ${staff.revenue_share_percent || 0}% revenue`;
+}
+
+function candidateCostProfile(candidate) {
+  const currency = candidate.currency_code || "EUR";
+
+  if (candidate.staff_role === "TECHNICIAN") {
+    return `est. ${money(candidate.daily_retainer || 0)} ${currency}/day + ${money(candidate.hourly_rate || 0)} ${currency}/h maintenance`;
+  }
+
+  return `est. ${money(candidate.salary_per_flight || 0)} ${currency}/leg + ${money(candidate.hourly_rate || 0)} ${currency}/h + ${candidate.revenue_share_percent || 0}% revenue`;
+}
+

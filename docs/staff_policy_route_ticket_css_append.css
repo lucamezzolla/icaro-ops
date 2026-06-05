@@ -1,0 +1,16 @@
+/* Staffing policy and indicative-cost wording. */
+.staff-policy-box,
+.info-box {
+  margin-bottom: 14px;
+}
+
+.staff-policy-box p,
+.info-box p {
+  margin: 6px 0 0;
+}
+
+.form-grid small.muted {
+  display: block;
+  font-weight: 500;
+  line-height: 1.35;
+}
