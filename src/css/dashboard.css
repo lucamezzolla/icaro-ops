@@ -506,5 +506,5 @@ body {
   width: 21px;
   height: 21px;
   fill: #ffffff;
-  transform: rotate(45deg);
+  transform: rotate(var(--flight-bearing, 0deg));
 }

@@ -57,10 +57,13 @@ async function loadRoutes() {
         · ${escapeHtml(route.registration_code)}
       </p>
       <p>
-        Crew:
-        ${escapeHtml(route.pilot_1_name)} /
-        ${escapeHtml(route.pilot_2_name)} ·
-        Tech: ${escapeHtml(route.technician_name)}
+        Flight crew:
+        ${escapeHtml(route.pilot_1_name || "Not assigned")} /
+        ${escapeHtml(route.pilot_2_name || "Not assigned")}
+      </p>
+      <p>
+        Ground maintenance:
+        ${escapeHtml(route.technician_name || "Not assigned")}
       </p>
       <div class="route-metrics">
         <div><strong>${escapeHtml(route.scheduled_departure_time_utc)}</strong><span>UTC departure</span></div>

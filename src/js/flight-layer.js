@@ -57,7 +57,12 @@ async function refreshIcaroFlights() {
       const marker = L.marker([position.lat, position.lng], {
         icon: L.divIcon({
           className: "",
-          html: aircraftMarkerSvg(),
+          html: aircraftMarkerSvg(calculateBearingDegrees(
+            Number(flight.origin_latitude),
+            Number(flight.origin_longitude),
+            Number(flight.destination_latitude),
+            Number(flight.destination_longitude)
+          )),
           iconSize: [34, 34],
           iconAnchor: [17, 17],
           popupAnchor: [0, -16]
@@ -139,14 +144,32 @@ function interpolateFlightPosition(flight) {
   };
 }
 
-function aircraftMarkerSvg() {
+function aircraftMarkerSvg(bearingDegrees = 0) {
   return `
-    <div class="flight-aircraft-marker">
+    <div class="flight-aircraft-marker" style="--flight-bearing: ${Number(bearingDegrees).toFixed(1)}deg">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5Z"/>
       </svg>
     </div>
   `;
+}
+
+function calculateBearingDegrees(lat1, lon1, lat2, lon2) {
+  if ([lat1, lon1, lat2, lon2].some(Number.isNaN)) {
+    return 0;
+  }
+
+  const phi1 = lat1 * Math.PI / 180;
+  const phi2 = lat2 * Math.PI / 180;
+  const deltaLambda = (lon2 - lon1) * Math.PI / 180;
+
+  const y = Math.sin(deltaLambda) * Math.cos(phi2);
+  const x =
+    Math.cos(phi1) * Math.sin(phi2) -
+    Math.sin(phi1) * Math.cos(phi2) * Math.cos(deltaLambda);
+
+  const bearing = Math.atan2(y, x) * 180 / Math.PI;
+  return (bearing + 360) % 360;
 }
 
 function escapeHtmlFlight(value) {
