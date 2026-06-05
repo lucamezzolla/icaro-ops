@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
+require __DIR__ . '/../../lib/reputation.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['error' => 'METHOD_NOT_ALLOWED'], 405);
@@ -568,5 +569,18 @@ function complete_due_flights(PDO $pdo, int $companyId): void
             'profit' => (float)$flight['profit_amount'],
             'company_id' => $companyId,
         ]);
+
+        $profit = (float)$flight['profit_amount'];
+
+        apply_reputation_event(
+            $pdo,
+            $companyId,
+            $profit > 0 ? 'FLIGHT_COMPLETED_PROFITABLE' : 'FLIGHT_COMPLETED_BREAK_EVEN_OR_LOSS',
+            'FLIGHT',
+            (int)$flight['id'],
+            $profit > 0
+                ? 'Flight completed successfully with positive profit.'
+                : 'Flight completed successfully but did not generate positive profit.'
+        );
     }
 }
