@@ -2,8 +2,15 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
+require __DIR__ . '/../../lib/session.php';
+
+$session = require_auth_session();
 
 $companyId = filter_input(INPUT_GET, 'companyId', FILTER_VALIDATE_INT);
+
+if (!$companyId) {
+    $companyId = (int)$session['company_id'];
+}
 
 if (!$companyId) {
     json_response(['error' => 'INVALID_COMPANY_ID'], 422);

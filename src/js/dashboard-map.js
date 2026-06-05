@@ -858,3 +858,287 @@ function escapeHtml(value) {
     }
   }
 })();
+
+/*
+ * Live sidebar refresh after flight completion.
+ * It refreshes the left Company/Base panel without reloading the page.
+ */
+(function setupIcaroOpsLiveSidebarRefresh() {
+  const REFRESH_MS = 5000;
+
+  document.addEventListener("DOMContentLoaded", () => {
+    refreshSidebarCompanyData();
+    setInterval(refreshSidebarCompanyData, REFRESH_MS);
+  });
+
+  async function refreshSidebarCompanyData() {
+    try {
+      /*
+       * Important:
+       * flights/active.php may complete arrived flights as a side effect.
+       * So call it before company/current.php.
+       */
+      await fetch("api/public/flights/active.php", {
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin"
+      }).catch(() => null);
+
+      const response = await fetch("api/public/company/current.php", {
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin"
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      updateSidebarValues(data);
+    } catch {
+      // Silent refresh: do not disturb the map if an API is temporarily unavailable.
+    }
+  }
+
+  function updateSidebarValues(data) {
+    const company = data.company || data;
+    const base = data.base || data.base_airport || {};
+    const capacity = data.aircraft_capacity || data.capacity || data;
+
+    const budget = firstDefined(company.budget_amount, data.budget_amount);
+    const currency = firstDefined(company.currency_code, data.currency_code, "EUR");
+    const reputation = Number(firstDefined(company.reputation_score, data.reputation_score, 100));
+
+    setValue("Budget", `${formatMoney(budget)} ${currency}`);
+    setValue("Reputation", `${reputation}/100`, reputation < 51 ? "bad" : "");
+
+    setValueIfPresent("Aircraft", formatPair(
+      firstDefined(capacity.aircraft_owned_count, capacity.aircraft_count, data.aircraft_owned_count),
+      firstDefined(capacity.max_aircraft_managed, data.max_aircraft_managed)
+    ));
+
+    setValueIfPresent("At base", formatPair(
+      firstDefined(capacity.aircraft_at_base_count, data.aircraft_at_base_count),
+      firstDefined(capacity.max_aircraft_on_ground, data.max_aircraft_on_ground)
+    ));
+
+    setValueIfPresent("In flight", firstDefined(
+      capacity.aircraft_in_flight_count,
+      data.aircraft_in_flight_count
+    ));
+
+    setValueIfPresent("Maintenance", firstDefined(
+      capacity.aircraft_maintenance_count,
+      data.aircraft_maintenance_count
+    ));
+
+    setValueIfPresent("Free fleet slots", firstDefined(
+      capacity.free_managed_aircraft_slots,
+      data.free_managed_aircraft_slots
+    ));
+
+    setValueIfPresent("Free ground slots", firstDefined(
+      capacity.free_ground_aircraft_slots,
+      data.free_ground_aircraft_slots
+    ));
+  }
+
+  function setValueIfPresent(label, value) {
+    if (value === undefined || value === null || value === "undefined / undefined") {
+      return;
+    }
+
+    setValue(label, value);
+  }
+
+  function setValue(label, value, stateClass = "") {
+    const dt = [...document.querySelectorAll("dt")].find(item => {
+      return normalize(item.textContent) === normalize(label);
+    });
+
+    if (!dt) {
+      return;
+    }
+
+    const dd = dt.parentElement?.querySelector("dd") || dt.nextElementSibling;
+
+    if (!dd) {
+      return;
+    }
+
+    dd.textContent = String(value);
+
+    if (normalize(label) === "reputation") {
+      dd.classList.remove("reputation-value", "bad");
+      dd.classList.add("reputation-value");
+
+      if (stateClass) {
+        dd.classList.add(stateClass);
+      }
+    }
+  }
+
+  function formatPair(left, right) {
+    if (left === undefined || left === null || right === undefined || right === null) {
+      return undefined;
+    }
+
+    return `${left} / ${right}`;
+  }
+
+  function formatMoney(value) {
+    return Number(value || 0).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function firstDefined(...values) {
+    return values.find(value => value !== undefined && value !== null);
+  }
+
+  function normalize(value) {
+    return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  }
+})();
+
+/*
+ * Live sidebar refresh after flight completion.
+ * It refreshes the left Company/Base panel without reloading the page.
+ */
+(function setupIcaroOpsLiveSidebarRefresh() {
+  const REFRESH_MS = 5000;
+
+  document.addEventListener("DOMContentLoaded", () => {
+    refreshSidebarCompanyData();
+    setInterval(refreshSidebarCompanyData, REFRESH_MS);
+  });
+
+  async function refreshSidebarCompanyData() {
+    try {
+      /*
+       * Important:
+       * flights/active.php may complete arrived flights as a side effect.
+       * So call it before company/current.php.
+       */
+      await fetch("api/public/flights/active.php", {
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin"
+      }).catch(() => null);
+
+      const response = await fetch("api/public/company/current.php", {
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin"
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      updateSidebarValues(data);
+    } catch {
+      // Silent refresh: do not disturb the map if an API is temporarily unavailable.
+    }
+  }
+
+  function updateSidebarValues(data) {
+    const company = data.company || data;
+    const base = data.base || data.base_airport || {};
+    const capacity = data.aircraft_capacity || data.capacity || data;
+
+    const budget = firstDefined(company.budget_amount, data.budget_amount);
+    const currency = firstDefined(company.currency_code, data.currency_code, "EUR");
+    const reputation = Number(firstDefined(company.reputation_score, data.reputation_score, 100));
+
+    setValue("Budget", `${formatMoney(budget)} ${currency}`);
+    setValue("Reputation", `${reputation}/100`, reputation < 51 ? "bad" : "");
+
+    setValueIfPresent("Aircraft", formatPair(
+      firstDefined(capacity.aircraft_owned_count, capacity.aircraft_count, data.aircraft_owned_count),
+      firstDefined(capacity.max_aircraft_managed, data.max_aircraft_managed)
+    ));
+
+    setValueIfPresent("At base", formatPair(
+      firstDefined(capacity.aircraft_at_base_count, data.aircraft_at_base_count),
+      firstDefined(capacity.max_aircraft_on_ground, data.max_aircraft_on_ground)
+    ));
+
+    setValueIfPresent("In flight", firstDefined(
+      capacity.aircraft_in_flight_count,
+      data.aircraft_in_flight_count
+    ));
+
+    setValueIfPresent("Maintenance", firstDefined(
+      capacity.aircraft_maintenance_count,
+      data.aircraft_maintenance_count
+    ));
+
+    setValueIfPresent("Free fleet slots", firstDefined(
+      capacity.free_managed_aircraft_slots,
+      data.free_managed_aircraft_slots
+    ));
+
+    setValueIfPresent("Free ground slots", firstDefined(
+      capacity.free_ground_aircraft_slots,
+      data.free_ground_aircraft_slots
+    ));
+  }
+
+  function setValueIfPresent(label, value) {
+    if (value === undefined || value === null || value === "undefined / undefined") {
+      return;
+    }
+
+    setValue(label, value);
+  }
+
+  function setValue(label, value, stateClass = "") {
+    const dt = [...document.querySelectorAll("dt")].find(item => {
+      return normalize(item.textContent) === normalize(label);
+    });
+
+    if (!dt) {
+      return;
+    }
+
+    const dd = dt.parentElement?.querySelector("dd") || dt.nextElementSibling;
+
+    if (!dd) {
+      return;
+    }
+
+    dd.textContent = String(value);
+
+    if (normalize(label) === "reputation") {
+      dd.classList.remove("reputation-value", "bad");
+      dd.classList.add("reputation-value");
+
+      if (stateClass) {
+        dd.classList.add(stateClass);
+      }
+    }
+  }
+
+  function formatPair(left, right) {
+    if (left === undefined || left === null || right === undefined || right === null) {
+      return undefined;
+    }
+
+    return `${left} / ${right}`;
+  }
+
+  function formatMoney(value) {
+    return Number(value || 0).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function firstDefined(...values) {
+    return values.find(value => value !== undefined && value !== null);
+  }
+
+  function normalize(value) {
+    return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  }
+})();

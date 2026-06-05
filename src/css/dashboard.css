@@ -595,3 +595,12 @@ dd.reputation-value {
 dd.reputation-value.bad {
   color: #ff5f5f !important;
 }
+
+dd.reputation-value {
+  font-weight: 800;
+  color: inherit !important;
+}
+
+dd.reputation-value.bad {
+  color: #ff5f5f !important;
+}
