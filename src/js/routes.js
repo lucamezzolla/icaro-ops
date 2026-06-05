@@ -1,12 +1,11 @@
 const API = {
   routes: "api/public/routes/list.php",
   create: "api/public/routes/create.php",
-  detail: id => `api/public/routes/detail.php?routeId=${encodeURIComponent(id)}`,
-  preview: "api/public/routes/preview.php",
-  startFlight: "api/public/flights/start-scheduled.php"
+  detail: id => `api/public/routes/detail.php?serviceId=${encodeURIComponent(id)}`,
+  preview: "api/public/routes/preview.php"
 };
 
-let routes = [];
+let services = [];
 let lastSuggestedTicketPrice = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -21,65 +20,57 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 async function loadRoutes() {
   hideError();
+
   try {
-    routes = await getJson(API.routes);
-    renderSummary(routes);
-    renderRoutes(routes);
+    services = await getJson(API.routes);
+    renderSummary(services);
+    renderRoutes(services);
   } catch (error) {
-    showError(error.message || "Unable to load routes.");
+    showError(error.message || "Unable to load services.");
   }
 }
 
 function renderSummary(rows) {
   const active = rows.filter(r => r.status === "ACTIVE").length;
-  const ready = rows.filter(r => r.dispatch_readiness === "READY").length;
+  const flights = rows.reduce((total, r) => total + Number(r.generated_flights_count || 0), 0);
+
   document.querySelector("#routesSummary").innerHTML = `
-    ${summaryRow("Total", rows.length)}
+    ${summaryRow("Services", rows.length)}
     ${summaryRow("Active", active)}
-    ${summaryRow("Ready", ready)}
+    ${summaryRow("Flights", flights)}
   `;
 }
 
 function renderRoutes(rows) {
   const tbody = document.querySelector("#routesTableBody");
+
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="8">No routes yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8">No scheduled services yet.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = rows.map(route => `
+  tbody.innerHTML = rows.map(service => `
     <tr>
-      <td><strong>${escapeHtml(route.origin_airport_icao_code)} → ${escapeHtml(route.destination_airport_icao_code)}</strong></td>
-      <td>${escapeHtml(route.scheduled_departure_time_utc || "-")}</td>
-      <td>${escapeHtml(route.registration_code || "Unassigned")}</td>
-      <td>${escapeHtml(route.pilot_1_name || "-")} / ${escapeHtml(route.pilot_2_name || "-")}</td>
-      <td>${escapeHtml(route.planned_duration_minutes || "-")} min</td>
-      <td>${money(route.ticket_price)} ${escapeHtml(route.currency_code || "")}</td>
-      <td><span class="badge ${route.dispatch_readiness === "READY" ? "good" : "warn"}">${escapeHtml(route.dispatch_readiness || route.status || "-")}</span></td>
+      <td>
+        <strong>${escapeHtml(service.service_code)}</strong>
+        <div class="muted">${escapeHtml(service.route_code)}</div>
+      </td>
+      <td>${escapeHtml(service.origin_airport_icao_code)} → ${escapeHtml(service.destination_airport_icao_code)}</td>
+      <td>${escapeHtml(service.scheduled_departure_time_utc || "-")}</td>
+      <td>${escapeHtml(service.required_aircraft_class || "-")}</td>
+      <td>${escapeHtml(service.manufacturer || "")} ${escapeHtml(service.model_name || "")}</td>
+      <td>${money(service.ticket_price)} ${escapeHtml(service.currency_code || "")}</td>
+      <td><span class="badge ${service.status === "ACTIVE" ? "good" : "warn"}">${escapeHtml(service.status || "-")}</span></td>
       <td>
         <div class="button-row">
-          <button type="button" data-route-detail="${route.route_id}">Details</button>
-          <button type="button" data-start-route="${route.route_id}" class="secondary">Start</button>
+          <button type="button" data-service-detail="${service.service_id}">Details</button>
         </div>
       </td>
     </tr>
   `).join("");
 
-  tbody.querySelectorAll("[data-route-detail]").forEach(button => {
-    button.addEventListener("click", () => openRouteDetail(Number(button.dataset.routeDetail)));
-  });
-
-  tbody.querySelectorAll("[data-start-route]").forEach(button => {
-    button.addEventListener("click", async () => {
-      if (!confirm("Start this scheduled flight now for testing?")) return;
-      try {
-        const flight = await postJson(API.startFlight, { route_id: Number(button.dataset.startRoute), force_now: true });
-        alert(`Flight ${flight.flight_code} is now in flight.`);
-        await loadRoutes();
-      } catch (error) {
-        showError(error.message || "Unable to start flight.");
-      }
-    });
+  tbody.querySelectorAll("[data-service-detail]").forEach(button => {
+    button.addEventListener("click", () => openRouteDetail(Number(button.dataset.serviceDetail)));
   });
 }
 
@@ -87,7 +78,7 @@ function openAddRouteDialog() {
   const dialog = document.querySelector("#routeDialog");
 
   if (!dialog) {
-    showError("Route dialog not found.");
+    showError("Service dialog not found.");
     return;
   }
 
@@ -131,13 +122,14 @@ async function previewRoute(options = {}) {
     if (!silent) {
       panel.hidden = true;
       error.hidden = false;
-      error.textContent = err.message || "Unable to preview route.";
+      error.textContent = err.message || "Unable to preview service.";
     }
   }
 }
 
 async function saveRoute(event) {
   event?.preventDefault?.();
+
   const error = document.querySelector("#routeDialogError");
   error.hidden = true;
 
@@ -147,7 +139,7 @@ async function saveRoute(event) {
     await loadRoutes();
   } catch (err) {
     error.hidden = false;
-    error.textContent = err.message || "Unable to create route.";
+    error.textContent = err.message || "Unable to create scheduled service.";
   }
 }
 
@@ -163,96 +155,96 @@ function routeFormPayload() {
 function renderPreview(p) {
   return `
     <div class="detail-grid">
-      ${section("Route", [
+      ${section("Air route", [
         ["Route", `${p.origin_airport_icao_code} → ${p.destination_airport_icao_code}`],
         ["Distance", `${p.planned_distance_km} km`],
         ["Duration", `${p.planned_duration_minutes} min`],
-        ["Block hours", `${p.block_hours} h`],
-        ["Aircraft", `${p.aircraft.manufacturer} ${p.aircraft.model_name}`]
+        ["Block hours", `${p.block_hours || "-"} h`],
+        ["Route layer", "Abstract air route, no aircraft or crew assigned permanently"]
       ])}
-      ${section("Passengers", [
-        ["Capacity", p.passenger_capacity],
-        ["Low estimate", `${p.estimates.low.passengers} pax · revenue ${money(p.estimates.low.revenue)} · profit ${money(p.estimates.low.profit)} ${p.currency_code}`],
-        ["Expected", `${p.estimates.expected.passengers} pax · revenue ${money(p.estimates.expected.revenue)} · profit ${money(p.estimates.expected.profit)} ${p.currency_code}`],
-        ["High estimate", `${p.estimates.high.passengers} pax · revenue ${money(p.estimates.high.revenue)} · profit ${money(p.estimates.high.profit)} ${p.currency_code}`]
+      ${section("Scheduled service", [
+        ["Service type", "Daily scheduled passenger service"],
+        ["Required aircraft class", "LIGHT_COMMERCIAL"],
+        ["Preferred model", `${p.aircraft.manufacturer} ${p.aircraft.model_name}`],
+        ["Ticket", `${money(p.ticket_price)} ${p.currency_code}`],
+        ["Suggested ticket", `${money(p.suggested_ticket_price || 0)} ${p.currency_code}`]
       ])}
       ${section("Expected economics", [
+        ["Expected pax", `${p.estimates.expected.passengers} / ${p.passenger_capacity}`],
         ["Revenue", `${money(p.estimates.expected.revenue)} ${p.currency_code}`],
         ["Fuel cost", `${money(p.costs.fuel_cost)} ${p.currency_code}`],
         ["Maintenance reserve", `${money(p.costs.maintenance_cost)} ${p.currency_code}`],
-        ["Crew allocated cost", `${money(p.costs.staff_cost)} ${p.currency_code}`],
-        ["Total cost", `${money(p.costs.total_operating_cost)} ${p.currency_code}`],
+        ["Crew allocated estimate", `${money(p.costs.staff_cost)} ${p.currency_code}`],
         ["Expected profit", `${money(p.estimates.expected.profit)} ${p.currency_code}`]
       ])}
-      ${section("Pricing", [
-        ["Current ticket", `${money(p.ticket_price)} ${p.currency_code}`],
-        ["Suggested ticket", `${money(p.suggested_ticket_price)} ${p.currency_code}`],
-        ["Break-even pax", p.break_even_passengers],
-        ["Recommendation", p.recommendation]
-      ])}
-      ${section("Cost model", [
-        ["Crew formula", p.cost_model?.crew_cost_formula || "-"],
-        ["Crew base before share", `${money(p.cost_model?.crew_base_cost_before_revenue_share || 0)} ${p.currency_code}`],
-        ["Daily retainer", p.cost_model?.daily_retainer_note || "-"],
-        ["Fuel burn", `${p.aircraft.fuel_burn_kg_per_hour} kg/h`],
-        ["Cruise speed", `${p.aircraft.cruise_speed_kmh} km/h`]
+      ${section("Flight note", [
+        ["Important", "This does not create a flight yet."],
+        ["Dispatch", "Each real flight will later choose a compatible aircraft at departure airport."],
+        ["Backup", "If the planned aircraft is away, another compatible aircraft can operate the flight."]
       ])}
     </div>
   `;
 }
 
-async function openRouteDetail(routeId) {
+async function openRouteDetail(serviceId) {
   const dialog = document.querySelector("#routeDetailDialog");
   const title = document.querySelector("#routeDetailTitle");
   const content = document.querySelector("#routeDetailContent");
-  title.textContent = "Route";
+
+  title.textContent = "Scheduled service";
   content.textContent = "Loading...";
   dialog.showModal();
 
   try {
-    const data = await getJson(API.detail(routeId));
-    const r = data.route;
-    title.textContent = `${r.origin_airport_icao_code} → ${r.destination_airport_icao_code}`;
+    const data = await getJson(API.detail(serviceId));
+    const s = data.service;
+    const flights = data.recent_flights || [];
+
+    title.textContent = `${s.service_code}`;
+
     content.innerHTML = `
       <div class="detail-grid">
-        ${section("Route", [
-          ["Route ID", r.route_id],
-          ["Status", r.status],
-          ["Origin", `${r.origin_airport_name} (${r.origin_airport_icao_code})`],
-          ["Destination", `${r.destination_airport_name} (${r.destination_airport_icao_code})`],
-          ["Departure UTC", r.scheduled_departure_time_utc],
-          ["Recurrence", r.recurrence_type],
-          ["Auto dispatch", r.auto_dispatch_enabled],
-          ["Backup aircraft", r.allow_backup_aircraft]
+        ${section("Air route", [
+          ["Route code", s.route_code],
+          ["Route", `${s.origin_airport_icao_code} → ${s.destination_airport_icao_code}`],
+          ["Origin", `${s.origin_airport_name || "-"} (${s.origin_airport_icao_code})`],
+          ["Destination", `${s.destination_airport_name || "-"} (${s.destination_airport_icao_code})`],
+          ["Scope", s.route_scope],
+          ["Market", s.route_market],
+          ["Distance", `${s.planned_distance_km} km`],
+          ["Estimated block", `${s.estimated_block_minutes} min`]
         ])}
-        ${section("Aircraft", [
-          ["Registration", r.registration_code || "-"],
-          ["Manufacturer", r.manufacturer || "-"],
-          ["Model", r.model_name || "-"],
-          ["ICAO type", r.icao_type_code || "-"]
+        ${section("Scheduled service", [
+          ["Service code", s.service_code],
+          ["Recurrence", s.recurrence_type],
+          ["Departure UTC", s.scheduled_departure_time_utc],
+          ["Status", s.service_status],
+          ["Required aircraft class", s.required_aircraft_class],
+          ["Preferred model", `${s.manufacturer || "-"} ${s.model_name || ""}`],
+          ["Base ticket", `${money(s.base_ticket_price)} ${s.currency_code}`]
         ])}
-        ${section("Crew", [
-          ["Pilot 1", r.pilot_1_name || "-"],
-          ["Pilot 2", r.pilot_2_name || "-"],
-          ["Ground maintenance", r.technician_name || "Not assigned"]
+        ${section("Dispatch policy", [
+          ["Aircraft binding", "No permanent aircraft binding at route level"],
+          ["Dispatch", "Real flight chooses compatible aircraft at origin airport"],
+          ["Backup allowed", Number(s.allow_backup_aircraft) ? "Yes" : "No"],
+          ["Extra flights allowed", Number(s.allow_extra_flights) ? "Yes" : "No"]
         ])}
-        ${section("Economics", [
-          ["Distance", `${r.planned_distance_km} km`],
-          ["Duration", `${r.planned_duration_minutes} min`],
-          ["Ticket", `${money(r.ticket_price)} ${r.currency_code}`],
-          ["Dispatch readiness", r.dispatch_readiness]
-        ])}
+        <section class="detail-section">
+          <h3>Recent flight instances</h3>
+          ${
+            flights.length
+              ? `<dl class="detail-list">${flights.map(f => `
+                  ${detailRow(f.flight_code || `Flight #${f.id}`, `${f.flight_operation_type || "-"} · ${f.status} · dispatch ${f.dispatch_status || "-"} · profit ${money(f.profit_amount)} ${f.currency_code || ""}`)}
+                `).join("")}</dl>`
+              : `<p class="muted">No real flight instances generated yet for this service.</p>`
+          }
+        </section>
       </div>
     `;
   } catch (error) {
-    content.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load route detail.")}</div>`;
+    content.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load service detail.")}</div>`;
   }
 }
-
-function section(title, rows) {
-  return `<section class="detail-section"><h3>${escapeHtml(title)}</h3><dl class="detail-list">${rows.map(([k,v]) => detailRow(k, v)).join("")}</dl></section>`;
-}
-
 
 function setupTicketSuggestion() {
   const origin = document.querySelector("#originAirport");
@@ -295,6 +287,9 @@ function debounce(callback, waitMs) {
   };
 }
 
+function section(title, rows) {
+  return `<section class="detail-section"><h3>${escapeHtml(title)}</h3><dl class="detail-list">${rows.map(([k,v]) => detailRow(k, v)).join("")}</dl></section>`;
+}
 
 async function getJson(url) {
   const response = await fetch(url, { headers: { "Accept": "application/json" }, credentials: "same-origin" });

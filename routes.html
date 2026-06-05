@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Icaro Ops - Routes</title>
+  <title>Icaro Ops - Services</title>
   <link rel="stylesheet" href="src/css/routes.css">
 </head>
 <body>
@@ -11,12 +11,12 @@
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark">IO</div>
-        <div><strong>Icaro Ops</strong><span>Routes</span></div>
+        <div><strong>Icaro Ops</strong><span>Services</span></div>
       </div>
 
       <section class="panel">
-        <h2>Routes</h2>
-        <p class="muted">Scheduled daily routes. A route is a commercial promise: aircraft, pilots and timing must support it.</p>
+        <h2>Services</h2>
+        <p class="muted">Scheduled services are commercial offers over abstract air routes. Real flights are generated later and dispatched with compatible aircraft.</p>
       </section>
 
       <section class="panel">
@@ -44,10 +44,10 @@
       <section class="page-header">
         <div>
           <p class="eyebrow">Operations</p>
-          <h1>Routes</h1>
-          <p>Manage scheduled routes with compact tables and detailed dialogs.</p>
+          <h1>Services over Air Routes</h1>
+          <p>Manage scheduled services separately from abstract routes and real flight instances.</p>
         </div>
-        <button id="addRouteButton" type="button">Add route</button>
+        <button id="addRouteButton" type="button">Add service</button>
       </section>
 
       <div id="pageError" class="page-error" hidden></div>
@@ -56,8 +56,8 @@
         <article class="card">
           <div class="card-header">
             <div>
-              <h2>Scheduled routes</h2>
-              <p>Essential data only. Open details for the full operational view.</p>
+              <h2>Scheduled services</h2>
+              <p>A service is not a flight. Details show air route, service policy and generated flight instances.</p>
             </div>
             <button id="refreshButton" type="button">Refresh</button>
           </div>
@@ -66,11 +66,11 @@
             <table>
               <thead>
                 <tr>
-                  <th>Route</th>
+                  <th>Service / Air route</th>
                   <th>Departure UTC</th>
-                  <th>Aircraft</th>
-                  <th>Crew</th>
-                  <th>Duration</th>
+                  <th>Required class</th>
+                  <th>Preferred model</th>
+                  <th>Status</th>
                   <th>Ticket</th>
                   <th>Status</th>
                   <th></th>
@@ -91,7 +91,7 @@
       <header class="dialog-header">
         <div>
           <p class="eyebrow">Route</p>
-          <h2 id="routeDialogTitle">Add route</h2>
+          <h2 id="routeDialogTitle">Add scheduled service</h2>
         </div>
         <button value="close" class="close-button" aria-label="Close">×</button>
       </header>
@@ -128,7 +128,7 @@
         </div>
 
         <section id="routePreviewPanel" class="preview-panel" hidden>
-          <h3>Economic preview</h3>
+          <h3>Service economic preview</h3>
           <div id="routePreviewContent"></div>
         </section>
       </div>
@@ -140,7 +140,7 @@
       <header class="dialog-header">
         <div>
           <p class="eyebrow">Route details</p>
-          <h2 id="routeDetailTitle">Route</h2>
+          <h2 id="routeDetailTitle">Scheduled service</h2>
         </div>
         <button value="close" class="close-button" aria-label="Close">×</button>
       </header>

@@ -9,11 +9,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $session = require_auth_session();
+
 $playerId = (int)$session['player_id'];
 $companyId = (int)$session['company_id'];
-$payload = read_json_body();
 
-if ((string)($payload['confirmation'] ?? '') !== 'RESET_MY_ICARO_OPS_DATA') {
+$payload = read_json_body();
+$confirmation = (string)($payload['confirmation'] ?? '');
+
+if ($confirmation !== 'RESET_MY_ICARO_OPS_DATA') {
     json_response([
         'error' => 'INVALID_CONFIRMATION',
         'message' => 'Type RESET_MY_ICARO_OPS_DATA to confirm development reset.',
@@ -41,24 +44,34 @@ try {
         $stmt = $pdo->prepare("
             DELETE l
             FROM company_staff_licenses l
-            JOIN company_staff s ON s.id = l.company_staff_id
+            JOIN company_staff s
+              ON s.id = l.company_staff_id
             WHERE s.company_id = ?
         ");
         $stmt->execute([$companyId]);
     }
 
     delete_if_table_exists($pdo, 'company_staff', 'company_id = ?', [$companyId]);
+
+    /*
+     * In development reset we clean the candidate market too,
+     * so signup/restart can generate a fresh pool.
+     */
     delete_if_table_exists($pdo, 'staff_candidate_licenses', '1 = 1', []);
     delete_if_table_exists($pdo, 'staff_candidates', '1 = 1', []);
+
     delete_if_table_exists($pdo, 'companies', 'id = ?', [$companyId]);
     delete_if_table_exists($pdo, 'players', 'id = ?', [$playerId]);
 
     $pdo->commit();
-    clear_auth_session();
+
+    destroy_current_session_cookie();
 
     json_response([
         'status' => 'RESET_DONE',
-        'message' => 'Development account, company, fleet, staff, routes, services, flights and candidate market were reset.',
+        'logout' => true,
+        'redirect_to' => 'signup.html',
+        'message' => 'Development account reset completed. Session destroyed.',
     ]);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) {
@@ -92,4 +105,30 @@ function delete_if_table_exists(PDO $pdo, string $tableName, string $whereSql, a
 
     $stmt = $pdo->prepare("DELETE FROM {$tableName} WHERE {$whereSql}");
     $stmt->execute($params);
+}
+
+function destroy_current_session_cookie(): void
+{
+    if (session_status() !== PHP_SESSION_ACTIVE) {
+        session_start();
+    }
+
+    $_SESSION = [];
+
+    $params = session_get_cookie_params();
+
+    setcookie(
+        session_name(),
+        '',
+        [
+            'expires' => time() - 42000,
+            'path' => $params['path'] ?: '/',
+            'domain' => $params['domain'] ?: '',
+            'secure' => (bool)$params['secure'],
+            'httponly' => (bool)$params['httponly'],
+            'samesite' => $params['samesite'] ?? 'Lax',
+        ]
+    );
+
+    session_destroy();
 }

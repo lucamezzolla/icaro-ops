@@ -5,39 +5,75 @@ require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
 
 $session = require_auth_session();
-$companyId = $session['company_id'];
+$companyId = (int)$session['company_id'];
 
-$stmt = db()->prepare("
-    SELECT *
-    FROM v_company_routes
-    WHERE company_id = :company_id
-    ORDER BY scheduled_departure_time_utc, origin_airport_icao_code, destination_airport_icao_code
+$pdo = db();
+
+/*
+ * Routes page now lists scheduled services over abstract air_routes.
+ * A service is NOT a flight. Flights are generated/started later.
+ */
+$stmt = $pdo->prepare("
+    SELECT
+      ss.id AS service_id,
+      ss.id AS route_id,
+      ss.service_code,
+      ss.company_id,
+      ss.air_route_id,
+      ss.recurrence_type,
+      ss.scheduled_departure_time_utc,
+      ss.service_status AS status,
+      ss.required_aircraft_class,
+      ss.preferred_aircraft_model_id,
+      ss.base_ticket_price AS ticket_price,
+      ss.currency_code,
+      ss.auto_dispatch_enabled,
+      ss.allow_backup_aircraft,
+      ss.allow_extra_flights,
+
+      ar.route_code,
+      ar.origin_airport_icao_code,
+      ar.destination_airport_icao_code,
+      ar.route_scope,
+      ar.route_market,
+      ar.route_operation_domain,
+      ar.planned_distance_km,
+      ar.estimated_block_minutes AS planned_duration_minutes,
+
+      oa.name AS origin_airport_name,
+      da.name AS destination_airport_name,
+
+      am.manufacturer,
+      am.model_name,
+      am.model_code,
+      am.icao_type_code,
+
+      (
+        SELECT COUNT(*)
+        FROM scheduled_flight_instances f
+        WHERE f.company_id = ss.company_id
+          AND f.scheduled_service_id = ss.id
+      ) AS generated_flights_count,
+
+      (
+        SELECT COUNT(*)
+        FROM scheduled_flight_instances f
+        WHERE f.company_id = ss.company_id
+          AND f.scheduled_service_id = ss.id
+          AND f.status = 'IN_FLIGHT'
+      ) AS active_flights_count
+    FROM scheduled_services ss
+    JOIN air_routes ar
+      ON ar.id = ss.air_route_id
+    LEFT JOIN airports oa
+      ON oa.icao_code = ar.origin_airport_icao_code
+    LEFT JOIN airports da
+      ON da.icao_code = ar.destination_airport_icao_code
+    LEFT JOIN aircraft_models am
+      ON am.id = ss.preferred_aircraft_model_id
+    WHERE ss.company_id = :company_id
+    ORDER BY ss.scheduled_departure_time_utc, ar.origin_airport_icao_code, ar.destination_airport_icao_code
 ");
-
 $stmt->execute(['company_id' => $companyId]);
 
-json_response(array_map(static function (array $row): array {
-    return [
-        'route_id' => (int)$row['route_id'],
-        'company_id' => (int)$row['company_id'],
-        'aircraft_id' => (int)$row['aircraft_id'],
-        'registration_code' => $row['registration_code'],
-        'manufacturer' => $row['manufacturer'],
-        'model_name' => $row['model_name'],
-        'model_code' => $row['model_code'],
-        'origin_airport_icao_code' => $row['origin_airport_icao_code'],
-        'origin_airport_name' => $row['origin_airport_name'],
-        'destination_airport_icao_code' => $row['destination_airport_icao_code'],
-        'destination_airport_name' => $row['destination_airport_name'],
-        'scheduled_departure_time_utc' => $row['scheduled_departure_time_utc'],
-        'recurrence_type' => $row['recurrence_type'],
-        'planned_distance_km' => $row['planned_distance_km'],
-        'planned_duration_minutes' => (int)$row['planned_duration_minutes'],
-        'ticket_price' => $row['ticket_price'],
-        'currency_code' => $row['currency_code'],
-        'status' => $row['status'],
-        'pilot_1_name' => $row['pilot_1_name'],
-        'pilot_2_name' => $row['pilot_2_name'],
-        'technician_name' => $row['technician_name'],
-    ];
-}, $stmt->fetchAll()));
+json_response($stmt->fetchAll());

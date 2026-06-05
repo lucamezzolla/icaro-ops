@@ -148,3 +148,65 @@ function hideMessages() {
     success.textContent = "";
   }
 }
+
+
+function redirectAfterDevelopmentReset(responseBody) {
+  window.location.href = responseBody?.redirect_to || "signup.html";
+}
+
+
+async function resetDevelopmentAccount() {
+  const confirmation = window.prompt(
+    "Type RESET_MY_ICARO_OPS_DATA to confirm development reset."
+  );
+
+  if (confirmation === null) {
+    return;
+  }
+
+  if (confirmation.trim() !== "RESET_MY_ICARO_OPS_DATA") {
+    alert("Reset cancelled. Confirmation text does not match.");
+    return;
+  }
+
+  const response = await fetch("api/public/dev/reset-my-data.php", {
+    method: "POST",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    credentials: "same-origin",
+    body: JSON.stringify({
+      confirmation: "RESET_MY_ICARO_OPS_DATA"
+    })
+  });
+
+  const body = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    alert(body?.message || body?.error || `Reset failed: ${response.status}`);
+    return;
+  }
+
+  alert(body?.message || "Development account reset completed.");
+  window.location.href = body?.redirect_to || "signup.html";
+}
+
+
+
+document.addEventListener("DOMContentLoaded", () => {
+  const resetButton =
+    document.querySelector("#resetAccountButton") ||
+    document.querySelector("#resetDevelopmentAccountButton") ||
+    document.querySelector("[data-action='reset-account']") ||
+    document.querySelector("[data-action='reset-development-account']");
+
+  if (resetButton && !resetButton.dataset.resetBound) {
+    resetButton.dataset.resetBound = "true";
+    resetButton.addEventListener("click", async (event) => {
+      event.preventDefault();
+      await resetDevelopmentAccount();
+    });
+  }
+});
+
