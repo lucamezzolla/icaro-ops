@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Icaro Ops - Dev Reset</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #07101d;
+      --panel: #0e1b2d;
+      --line: rgba(255,255,255,0.14);
+      --text: #eef6ff;
+      --muted: #acc1d8;
+      --danger: #ff6b6b;
+      --blue: #294f8b;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at top, #132944, var(--bg));
+      color: var(--text);
+    }
+
+    main {
+      width: min(680px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      padding: 26px;
+      background: linear-gradient(180deg, var(--panel), #081422);
+      box-shadow: 0 22px 55px rgba(0,0,0,0.35);
+    }
+
+    h1 { margin: 0 0 10px; }
+    p { color: var(--muted); line-height: 1.5; }
+    code { color: #9ff0c2; }
+
+    .warning {
+      border: 1px solid rgba(255,107,107,0.35);
+      border-radius: 16px;
+      padding: 14px;
+      background: rgba(255,107,107,0.10);
+      color: #ffd7d7;
+      margin: 18px 0;
+    }
+
+    label {
+      display: grid;
+      gap: 8px;
+      margin: 18px 0;
+      font-weight: 800;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 13px;
+      background: rgba(255,255,255,0.08);
+      color: var(--text);
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 12px 16px;
+      background: var(--danger);
+      color: white;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .secondary {
+      display: inline-block;
+      margin-left: 10px;
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 800;
+    }
+
+    pre {
+      white-space: pre-wrap;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(0,0,0,0.25);
+      color: #d9ecff;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Development reset</h1>
+    <p>
+      This page deletes the currently logged-in player account, company and all related game data.
+      Use it only on your local development environment.
+    </p>
+
+    <div class="warning">
+      This action is destructive. After reset you will be logged out and redirected to signup.
+    </div>
+
+    <label>
+      Type <code>RESET_MY_ICARO_OPS_DATA</code> to confirm
+      <input id="confirmInput" autocomplete="off" spellcheck="false">
+    </label>
+
+    <button id="resetButton" type="button" disabled>Reset my development data</button>
+    <a class="secondary" href="index.html">Cancel</a>
+
+    <pre id="result" hidden></pre>
+  </main>
+
+  <script>
+    const input = document.querySelector("#confirmInput");
+    const button = document.querySelector("#resetButton");
+    const result = document.querySelector("#result");
+
+    input.addEventListener("input", () => {
+      button.disabled = input.value !== "RESET_MY_ICARO_OPS_DATA";
+    });
+
+    button.addEventListener("click", async () => {
+      if (!confirm("Really delete your player, company and all related game data?")) {
+        return;
+      }
+
+      button.disabled = true;
+
+      try {
+        const response = await fetch("api/public/dev/reset-my-data.php", {
+          method: "POST",
+          headers: {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+          },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            confirm: "RESET_MY_ICARO_OPS_DATA"
+          })
+        });
+
+        const body = await response.json().catch(() => null);
+
+        result.hidden = false;
+        result.textContent = JSON.stringify(body, null, 2);
+
+        if (!response.ok) {
+          button.disabled = false;
+          return;
+        }
+
+        setTimeout(() => {
+          window.location.href = body.next || "signup.html";
+        }, 1200);
+      } catch (error) {
+        result.hidden = false;
+        result.textContent = error.message || "Reset failed.";
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
