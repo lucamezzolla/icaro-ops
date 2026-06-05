@@ -559,3 +559,19 @@ body {
   transform: translate(-50%, -50%) rotate(var(--flight-bearing, 0deg));
   transform-origin: 50% 50%;
 }
+
+.reputation-value {
+  font-weight: 800;
+}
+
+.reputation-value.good {
+  color: #9ff0c2;
+}
+
+.reputation-value.warning {
+  color: #ffd27e;
+}
+
+.reputation-value.bad {
+  color: #ff8f8f;
+}

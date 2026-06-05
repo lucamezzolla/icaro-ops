@@ -651,3 +651,173 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+/*
+ * Live dashboard refresh.
+ * Keeps the left Company/Base panel updated after flights complete,
+ * without forcing a full page reload.
+ */
+(function setupLiveCompanyPanelRefresh() {
+  const REFRESH_MS = 10000;
+
+  document.addEventListener("DOMContentLoaded", () => {
+    refreshCompanyPanelLive();
+    setInterval(refreshCompanyPanelLive, REFRESH_MS);
+  });
+
+  async function refreshCompanyPanelLive() {
+    try {
+      const response = await fetch("api/public/company/current.php", {
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin"
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      updateCompanyPanelFromApi(data);
+    } catch {
+      // Silent: map/dashboard must remain usable even if the API is temporarily unavailable.
+    }
+  }
+
+  function updateCompanyPanelFromApi(data) {
+    const company = data.company || data;
+    const base = data.base || data.base_airport || data.airport || {};
+    const capacity = data.aircraft_capacity || data.capacity || data.base_capacity || data;
+
+    const budgetAmount = firstDefined(
+      company.budget_amount,
+      data.budget_amount,
+      data.budget
+    );
+
+    const currencyCode = firstDefined(
+      company.currency_code,
+      data.currency_code,
+      "EUR"
+    );
+
+    const reputation = Number(firstDefined(
+      company.reputation_score,
+      data.reputation_score,
+      data.reputation,
+      100
+    ));
+
+    if (budgetAmount !== undefined) {
+      setPanelValue("Budget", `${moneyLive(budgetAmount)} ${currencyCode}`);
+    }
+
+    setPanelValue("Reputation", `${reputation}/100`, reputationClass(reputation));
+
+    setPanelValueIfPresent("Aircraft", formatPair(
+      firstDefined(capacity.aircraft_owned_count, data.aircraft_owned_count),
+      firstDefined(capacity.max_aircraft_managed, data.max_aircraft_managed)
+    ));
+
+    setPanelValueIfPresent("At base", formatPair(
+      firstDefined(capacity.aircraft_at_base_count, data.aircraft_at_base_count),
+      firstDefined(capacity.max_aircraft_on_ground, data.max_aircraft_on_ground)
+    ));
+
+    setPanelValueIfPresent("In flight", firstDefined(
+      capacity.aircraft_in_flight_count,
+      data.aircraft_in_flight_count
+    ));
+
+    setPanelValueIfPresent("Maintenance", firstDefined(
+      capacity.aircraft_maintenance_count,
+      data.aircraft_maintenance_count
+    ));
+
+    setPanelValueIfPresent("Free fleet slots", firstDefined(
+      capacity.free_managed_aircraft_slots,
+      data.free_managed_aircraft_slots
+    ));
+
+    setPanelValueIfPresent("Free ground slots", firstDefined(
+      capacity.free_ground_aircraft_slots,
+      data.free_ground_aircraft_slots
+    ));
+  }
+
+  function setPanelValueIfPresent(label, value, className = "") {
+    if (value === undefined || value === null || value === "undefined / undefined") {
+      return;
+    }
+
+    setPanelValue(label, value, className);
+  }
+
+  function setPanelValue(label, value, className = "") {
+    const labelKey = normalizeLabel(label);
+
+    const matchingDt = [...document.querySelectorAll("dt")].find(dt => {
+      return normalizeLabel(dt.textContent) === labelKey;
+    });
+
+    if (!matchingDt) {
+      return;
+    }
+
+    const dd = matchingDt.parentElement?.querySelector("dd") || matchingDt.nextElementSibling;
+
+    if (!dd) {
+      return;
+    }
+
+    dd.textContent = String(value);
+
+    if (labelKey === "reputation") {
+      dd.classList.remove("reputation-value", "good", "warning", "bad");
+      dd.classList.add("reputation-value");
+
+      if (className) {
+        dd.classList.add(className);
+      }
+    }
+  }
+
+  function reputationClass(value) {
+    if (value < 51) {
+      return "bad";
+    }
+
+    if (value < 75) {
+      return "warning";
+    }
+
+    return "good";
+  }
+
+  function formatPair(current, max) {
+    if (current === undefined || current === null || max === undefined || max === null) {
+      return undefined;
+    }
+
+    return `${current} / ${max}`;
+  }
+
+  function moneyLive(value) {
+    const numeric = Number(value || 0);
+
+    return numeric.toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function firstDefined(...values) {
+    return values.find(value => value !== undefined && value !== null);
+  }
+
+  function normalizeLabel(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  }
+})();
