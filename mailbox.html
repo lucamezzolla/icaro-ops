@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icaro Ops - Mailbox</title>
+  <link rel="stylesheet" href="src/css/mailbox.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">IO</div>
+        <div>
+          <strong>Icaro Ops</strong>
+          <span>Operations Mailbox</span>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h2>Mailbox</h2>
+        <p class="muted">Operational alerts, maintenance events and future decision messages.</p>
+      </section>
+
+      <section class="panel">
+        <button id="runMaintenanceCheckButton" type="button">Run maintenance check</button>
+        <p class="muted">Development helper: scans aircraft and generates maintenance messages if needed.</p>
+      </section>
+    </aside>
+
+    <main class="content-shell">
+      <header class="topbar">
+        
+        <nav>
+          <a href="index.html">Map</a>
+          <a href="fleet.html">Fleet</a>
+          <a href="staff.html">Staff</a>
+          <a href="routes.html">Routes</a>
+          <a href="mailbox.html" class="active">Mailbox</a>
+          <a href="#">Finance</a>
+        </nav>
+        <div id="utcClock" class="utc-clock">---- -- -- --:--:-- UTC</div>
+      </header>
+
+      <section class="page-header">
+        <div>
+          <p class="eyebrow">Mailbox</p>
+          <h1>Operations messages</h1>
+          <p>Read system-generated messages about dispatch, maintenance and future aircraft problems.</p>
+        </div>
+      </section>
+
+      <div id="pageError" class="page-error" hidden></div>
+
+      <section class="mailbox-grid">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>Messages</h2>
+              <p>Newest first.</p>
+            </div>
+            <button id="refreshButton" type="button">Refresh</button>
+          </div>
+
+          <div id="messageList" class="message-list">Loading...</div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="src/js/auth-guard.js"></script>
+  <script src="src/js/mailbox.js"></script>
+</body>
+</html>
