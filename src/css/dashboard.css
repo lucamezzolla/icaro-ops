@@ -585,3 +585,13 @@ body {
 .reputation-value.bad {
   color: #ff8f8f;
 }
+
+/* Reputation display: neutral by default, red below 51/100. */
+dd.reputation-value {
+  font-weight: 800;
+  color: inherit !important;
+}
+
+dd.reputation-value.bad {
+  color: #ff5f5f !important;
+}

@@ -813,3 +813,48 @@ function escapeHtml(value) {
       .replace(/\s+/g, " ");
   }
 })();
+
+/*
+ * Reputation formatting guard.
+ * Ensures the sidebar always shows reputation as x/100
+ * and red when it drops below 51.
+ */
+(function setupReputationFormattingGuard() {
+  document.addEventListener("DOMContentLoaded", () => {
+    formatReputationField();
+    setInterval(formatReputationField, 2000);
+  });
+
+  function formatReputationField() {
+    const dt = [...document.querySelectorAll("dt")].find(item => {
+      return String(item.textContent || "").trim().toLowerCase() === "reputation";
+    });
+
+    if (!dt) {
+      return;
+    }
+
+    const dd = dt.parentElement?.querySelector("dd") || dt.nextElementSibling;
+
+    if (!dd) {
+      return;
+    }
+
+    const raw = String(dd.textContent || "").trim();
+    const match = raw.match(/\d+/);
+
+    if (!match) {
+      return;
+    }
+
+    const value = Number(match[0]);
+
+    dd.textContent = `${value}/100`;
+    dd.classList.remove("reputation-value", "bad");
+    dd.classList.add("reputation-value");
+
+    if (value < 51) {
+      dd.classList.add("bad");
+    }
+  }
+})();
