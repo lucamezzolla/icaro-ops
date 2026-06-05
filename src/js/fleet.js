@@ -127,7 +127,8 @@ async function loadMyAircraft() {
             </td>
             <td>${escapeHtml(row.condition_percent)}%</td>
             <td>${money(row.current_market_value)} ${escapeHtml(row.currency_code)}</td>
-            <td>${aircraftImageButton(row)}</td>
+            <td>${aircraftImageButton(row)}
+              <a class="secondary aircraft-image-button" href="maintenance.html?aircraftId=${row.company_aircraft_id}">Maintenance</a></td>
             <td>
               ${row.is_available_for_sale
                 ? `<span class="badge">Listed ${money(row.asking_price)} ${escapeHtml(row.currency_code)}</span>`

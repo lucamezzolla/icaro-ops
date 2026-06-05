@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icaro Ops - Aircraft Maintenance</title>
+  <link rel="stylesheet" href="src/css/maintenance.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">IO</div>
+        <div>
+          <strong>Icaro Ops</strong>
+          <span>Aircraft Maintenance</span>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h2>Aircraft</h2>
+        <dl id="aircraftSummary" class="summary-list">
+          <div><dt>Status</dt><dd>Loading...</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel">
+        <a class="side-link" href="fleet.html">Back to Fleet</a>
+      </section>
+    </aside>
+
+    <main class="content-shell">
+      <header class="topbar">
+        <nav>
+          <a href="index.html">Map</a>
+          <a href="fleet.html">Fleet</a>
+          <a href="staff.html">Staff</a>
+          <a href="routes.html">Routes</a>
+          <a href="mailbox.html">Mailbox</a>
+          <a href="#">Finance</a>
+          <a href="#" id="settingsNavLink">Settings</a>
+        </nav>
+        <div id="utcClock" class="utc-clock">---- -- -- --:--:-- UTC</div>
+      </header>
+
+      <section class="page-header">
+        <div>
+          <p class="eyebrow">Maintenance</p>
+          <h1 id="pageTitle">Aircraft maintenance</h1>
+          <p>Plan maintenance while the aircraft is on the ground. Technicians are required here, not as flight crew.</p>
+        </div>
+      </section>
+
+      <div id="pageError" class="page-error" hidden></div>
+
+      <section class="maintenance-grid">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>Maintenance status</h2>
+              <p>Condition, hours, cycles and aircraft state.</p>
+            </div>
+            <button id="refreshButton" type="button">Refresh</button>
+          </div>
+
+          <div id="maintenanceDetail">Loading...</div>
+
+          <div class="actions">
+            <button id="scheduleMaintenanceButton" type="button">Schedule maintenance</button>
+            <button id="completeMaintenanceButton" type="button">Complete maintenance</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>Events</h2>
+              <p>Open and historical aircraft events.</p>
+            </div>
+          </div>
+
+          <div id="eventsList">Loading...</div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="src/js/auth-guard.js"></script>
+  <script src="src/js/maintenance.js"></script>
+</body>
+</html>
