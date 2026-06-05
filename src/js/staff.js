@@ -50,7 +50,7 @@ function renderStaff(rows) {
       <td><span class="badge ${s.employment_status === "ACTIVE" ? "good" : "warn"}">${escapeHtml(s.employment_status || "-")}</span></td>
       <td>${escapeHtml(s.reliability_score ?? "-")}</td>
       <td>${escapeHtml(s.fatigue_score ?? "-")}</td>
-      <td>${money(s.salary_per_flight || 0)} ${escapeHtml(s.currency_code || "EUR")}</td>
+      <td>${costProfile(s)}</td>
       <td><button type="button" data-staff-detail="${s.company_staff_id || s.staff_id || s.id}">Details</button></td>
     </tr>
   `).join("");
@@ -174,3 +174,14 @@ function money(value) { return Number(value || 0).toLocaleString("en-US", { mini
 function showError(message) { const e = document.querySelector("#pageError"); e.hidden = false; e.textContent = message; }
 function hideError() { const e = document.querySelector("#pageError"); e.hidden = true; e.textContent = ""; }
 function escapeHtml(value) { return String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
+
+
+function costProfile(staff) {
+  const currency = staff.currency_code || "EUR";
+
+  if (staff.staff_role === "TECHNICIAN") {
+    return `${money(staff.daily_retainer || 0)} ${currency}/day + ${money(staff.hourly_rate || 0)} ${currency}/h maint.`;
+  }
+
+  return `${money(staff.salary_per_flight || 0)} ${currency}/leg + ${money(staff.hourly_rate || 0)} ${currency}/h + ${staff.revenue_share_percent || 0}% rev.`;
+}
