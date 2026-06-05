@@ -45,23 +45,44 @@ try {
         json_response(['error' => 'ROUTE_NOT_FOUND'], 404);
     }
 
-    $aircraftStmt = $pdo->prepare("
-        SELECT ca.status
-        FROM company_aircraft ca
-        WHERE ca.id = :aircraft_id
-          AND ca.company_id = :company_id
-        LIMIT 1
-        FOR UPDATE
-    ");
-    $aircraftStmt->execute([
-        'aircraft_id' => (int)$route['aircraft_id'],
-        'company_id' => $companyId,
-    ]);
-    $aircraftStatus = $aircraftStmt->fetchColumn();
+    $crew = validate_dispatch_pilots($pdo, $companyId, $route);
 
-    if (!in_array($aircraftStatus, ['AVAILABLE', 'PARKED'], true)) {
+    if (!$crew['ok']) {
         $pdo->rollBack();
-        json_response(['error' => 'AIRCRAFT_NOT_AVAILABLE'], 409);
+        json_response([
+            'error' => $crew['error'],
+            'message' => $crew['message'],
+            'future_mailbox_event' => [
+                'type' => 'CREW_BLOCKED',
+                'options' => ['ASSIGN_PILOTS', 'DELAY_FLIGHT', 'CANCEL_FLIGHT']
+            ],
+        ], 409);
+    }
+
+    $aircraft = find_dispatch_aircraft($pdo, $companyId, $route);
+
+    if (!$aircraft) {
+        $pdo->rollBack();
+        json_response([
+            'error' => 'NO_AVAILABLE_AIRCRAFT_AT_ORIGIN',
+            'message' => 'No available Cessna 208B is currently at the route origin airport. The route remains valid, but this flight cannot depart now.',
+            'future_mailbox_event' => [
+                'type' => 'DISPATCH_BLOCKED',
+                'options' => ['SUBSTITUTE_AIRCRAFT', 'DELAY_FLIGHT', 'CANCEL_FLIGHT']
+            ],
+        ], 409);
+    }
+
+    if ((float)$aircraft['condition_percent'] <= 45.0 || $aircraft['status'] === 'MAINTENANCE') {
+        $pdo->rollBack();
+        json_response([
+            'error' => 'AIRCRAFT_MAINTENANCE_REQUIRED',
+            'message' => 'Aircraft is not fit for dispatch. Maintenance must be planned before departure.',
+            'future_mailbox_event' => [
+                'type' => 'MAINTENANCE_REQUIRED',
+                'options' => ['SCHEDULE_MAINTENANCE', 'SUBSTITUTE_AIRCRAFT', 'DELAY_FLIGHT', 'CANCEL_FLIGHT']
+            ],
+        ], 409);
     }
 
     $flightDate = gmdate('Y-m-d');
@@ -71,7 +92,7 @@ try {
     $arrivalTs = strtotime($actualDeparture . ' UTC') + ((int)$route['planned_duration_minutes'] * 60);
     $scheduledArrival = gmdate('Y-m-d H:i:s', $arrivalTs);
 
-    $capacity = (int)$route['passenger_capacity_standard'];
+    $capacity = (int)$aircraft['passenger_capacity_standard'];
     $loadFactor = random_int(55, 100);
     $passengers = max(1, min($capacity, (int)floor($capacity * $loadFactor / 100)));
 
@@ -80,35 +101,9 @@ try {
 
     $durationHours = ((int)$route['planned_duration_minutes']) / 60.0;
     $fuelPricePerKg = 1.15;
-    $fuelCost = ((float)$route['fuel_burn_kg_per_hour']) * $durationHours * $fuelPricePerKg;
-    $maintenanceCost = ((float)$route['maintenance_cost_per_hour']) * $durationHours;
-
-    $staffStmt = $pdo->prepare("
-        SELECT
-          SUM(CASE WHEN id IN (:p1, :p2) THEN salary_per_flight ELSE 0 END) AS pilot_salary,
-          SUM(CASE WHEN id IN (:p1b, :p2b) THEN revenue_share_percent ELSE 0 END) AS pilot_revenue_share,
-          SUM(CASE WHEN id = :tech THEN daily_retainer ELSE 0 END) AS technician_cost
-        FROM company_staff
-        WHERE company_id = :company_id
-          AND id IN (:p1c, :p2c, :techc)
-    ");
-    $staffStmt->execute([
-        'p1' => (int)$route['assigned_pilot_1_id'] ?? 0,
-        'p2' => (int)$route['assigned_pilot_2_id'] ?? 0,
-        'p1b' => (int)$route['assigned_pilot_1_id'] ?? 0,
-        'p2b' => (int)$route['assigned_pilot_2_id'] ?? 0,
-        'tech' => (int)$route['assigned_technician_id'] ?? 0,
-        'company_id' => $companyId,
-        'p1c' => (int)$route['assigned_pilot_1_id'] ?? 0,
-        'p2c' => (int)$route['assigned_pilot_2_id'] ?? 0,
-        'techc' => (int)$route['assigned_technician_id'] ?? 0,
-    ]);
-    $staff = $staffStmt->fetch();
-
-    $pilotSalary = (float)($staff['pilot_salary'] ?? 0);
-    $pilotRevenueSharePercent = (float)($staff['pilot_revenue_share'] ?? 0);
-    $technicianCost = (float)($staff['technician_cost'] ?? 0);
-    $staffCost = $pilotSalary + $technicianCost + ($revenue * $pilotRevenueSharePercent / 100.0);
+    $fuelCost = ((float)$aircraft['fuel_burn_kg_per_hour']) * $durationHours * $fuelPricePerKg;
+    $maintenanceCost = ((float)$aircraft['maintenance_cost_per_hour']) * $durationHours;
+    $staffCost = calculate_pilot_cost($pdo, $companyId, $route, $revenue);
 
     $totalCost = $fuelCost + $maintenanceCost + $staffCost;
     $profit = $revenue - $totalCost;
@@ -172,7 +167,7 @@ try {
     $insert->execute([
         'route_id' => $routeId,
         'company_id' => $companyId,
-        'aircraft_id' => (int)$route['aircraft_id'],
+        'aircraft_id' => (int)$aircraft['id'],
         'flight_code' => $flightCode,
         'flight_date_utc' => $flightDate,
         'origin' => $route['origin_airport_icao_code'],
@@ -202,9 +197,22 @@ try {
           AND company_id = :company_id
     ");
     $updateAircraft->execute([
-        'aircraft_id' => (int)$route['aircraft_id'],
+        'aircraft_id' => (int)$aircraft['id'],
         'company_id' => $companyId,
     ]);
+
+    if (empty($route['aircraft_id'])) {
+        $pdo->prepare("
+            UPDATE company_routes
+            SET aircraft_id = :aircraft_id
+            WHERE id = :route_id
+              AND company_id = :company_id
+        ")->execute([
+            'aircraft_id' => (int)$aircraft['id'],
+            'route_id' => $routeId,
+            'company_id' => $companyId,
+        ]);
+    }
 
     $pdo->commit();
 
@@ -228,6 +236,125 @@ try {
         'error' => 'DATABASE_ERROR',
         'message' => 'Unable to start scheduled flight.',
     ], 500);
+}
+
+function find_dispatch_aircraft(PDO $pdo, int $companyId, array $route): ?array
+{
+    $baseSql = "
+        SELECT
+          ca.id,
+          ca.registration_code,
+          ca.status,
+          ca.current_airport_icao_code,
+          ca.condition_percent,
+          am.model_code,
+          am.passenger_capacity_standard,
+          am.cruise_speed_kmh,
+          am.range_km,
+          am.fuel_burn_kg_per_hour,
+          am.maintenance_cost_per_hour
+        FROM company_aircraft ca
+        JOIN aircraft_models am
+          ON am.id = ca.aircraft_model_id
+        WHERE ca.company_id = :company_id
+          AND ca.status IN ('AVAILABLE', 'PARKED')
+          AND ca.current_airport_icao_code = :origin
+          AND am.model_code = 'C208B_GRAND_CARAVAN_EX'
+    ";
+
+    if (!empty($route['aircraft_id'])) {
+        $stmt = $pdo->prepare($baseSql . " AND ca.id = :aircraft_id LIMIT 1 FOR UPDATE");
+        $stmt->execute([
+            'company_id' => $companyId,
+            'origin' => $route['origin_airport_icao_code'],
+            'aircraft_id' => (int)$route['aircraft_id'],
+        ]);
+        $row = $stmt->fetch();
+
+        if ($row) {
+            return $row;
+        }
+    }
+
+    $stmt = $pdo->prepare($baseSql . " ORDER BY ca.id LIMIT 1 FOR UPDATE");
+    $stmt->execute([
+        'company_id' => $companyId,
+        'origin' => $route['origin_airport_icao_code'],
+    ]);
+    $row = $stmt->fetch();
+
+    return $row ?: null;
+}
+
+function validate_dispatch_pilots(PDO $pdo, int $companyId, array $route): array
+{
+    if (empty($route['assigned_pilot_1_id']) || empty($route['assigned_pilot_2_id'])) {
+        return [
+            'ok' => false,
+            'error' => 'MISSING_PILOTS',
+            'message' => 'Two active pilots with CPL and C208_TYPE are required.',
+        ];
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM company_staff s
+        WHERE s.company_id = :company_id
+          AND s.id IN (:p1, :p2)
+          AND s.staff_role = 'PILOT'
+          AND s.employment_status = 'ACTIVE'
+          AND EXISTS (
+            SELECT 1
+            FROM company_staff_licenses l
+            WHERE l.company_staff_id = s.id
+              AND l.license_code = 'CPL'
+          )
+          AND EXISTS (
+            SELECT 1
+            FROM company_staff_licenses l
+            WHERE l.company_staff_id = s.id
+              AND l.license_code = 'C208_TYPE'
+          )
+    ");
+    $stmt->execute([
+        'company_id' => $companyId,
+        'p1' => (int)$route['assigned_pilot_1_id'],
+        'p2' => (int)$route['assigned_pilot_2_id'],
+    ]);
+
+    if ((int)$stmt->fetchColumn() < 2) {
+        return [
+            'ok' => false,
+            'error' => 'PILOTS_NOT_QUALIFIED',
+            'message' => 'Assigned pilots are not both active and qualified for Cessna passenger operations.',
+        ];
+    }
+
+    return ['ok' => true];
+}
+
+function calculate_pilot_cost(PDO $pdo, int $companyId, array $route, float $revenue): float
+{
+    $stmt = $pdo->prepare("
+        SELECT
+          SUM(salary_per_flight) AS pilot_salary,
+          SUM(revenue_share_percent) AS pilot_revenue_share
+        FROM company_staff
+        WHERE company_id = :company_id
+          AND id IN (:p1, :p2)
+    ");
+    $stmt->execute([
+        'company_id' => $companyId,
+        'p1' => (int)$route['assigned_pilot_1_id'],
+        'p2' => (int)$route['assigned_pilot_2_id'],
+    ]);
+
+    $staff = $stmt->fetch();
+
+    $pilotSalary = (float)($staff['pilot_salary'] ?? 0);
+    $pilotRevenueSharePercent = (float)($staff['pilot_revenue_share'] ?? 0);
+
+    return $pilotSalary + ($revenue * $pilotRevenueSharePercent / 100.0);
 }
 
 function complete_due_flights(PDO $pdo, int $companyId): void
