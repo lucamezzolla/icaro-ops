@@ -99,7 +99,7 @@
       <div class="dialog-body">
         <div id="routeDialogError" class="page-error" hidden></div>
 
-        <form id="routeForm" class="form-grid">
+        <div id="routeForm" class="form-grid">
           <label>
             Origin ICAO
             <input id="originAirport" name="origin_airport_icao_code" maxlength="4" required placeholder="LIRA">
@@ -122,9 +122,9 @@
 
           <div class="form-actions">
             <button id="previewRouteButton" type="button">Preview economics</button>
-            <button id="saveRouteButton" type="submit">Create route</button>
+            <button id="saveRouteButton" type="button">Create route</button>
           </div>
-        </form>
+        </div>
 
         <section id="routePreviewPanel" class="preview-panel" hidden>
           <h3>Economic preview</h3>

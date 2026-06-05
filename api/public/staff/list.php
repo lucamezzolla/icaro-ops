@@ -6,15 +6,8 @@ require __DIR__ . '/../../lib/session.php';
 
 $session = require_auth_session();
 $companyId = (int)$session['company_id'];
-$staffId = filter_input(INPUT_GET, 'staffId', FILTER_VALIDATE_INT);
 
-if (!$staffId) {
-    json_response(['error' => 'INVALID_STAFF_ID'], 422);
-}
-
-$pdo = db();
-
-$stmt = $pdo->prepare("
+$stmt = db()->prepare("
     SELECT
       id,
       id AS staff_id,
@@ -54,33 +47,16 @@ $stmt = $pdo->prepare("
       dismissed_at_utc
     FROM company_staff
     WHERE company_id = :company_id
-      AND id = :staff_id
-    LIMIT 1
+    ORDER BY
+      CASE staff_role
+        WHEN 'PILOT' THEN 1
+        WHEN 'TECHNICIAN' THEN 2
+        ELSE 3
+      END,
+      display_name
 ");
-$stmt->execute([
-    'company_id' => $companyId,
-    'staff_id' => $staffId,
-]);
-
-$staff = $stmt->fetch();
-
-if (!$staff) {
-    json_response(['error' => 'STAFF_NOT_FOUND'], 404);
-}
-
-$licenseStmt = $pdo->prepare("
-    SELECT
-      license_code,
-      proficiency_score,
-      issued_at_utc,
-      expires_at_utc
-    FROM company_staff_licenses
-    WHERE company_staff_id = :staff_id
-    ORDER BY license_code
-");
-$licenseStmt->execute(['staff_id' => $staffId]);
+$stmt->execute(['company_id' => $companyId]);
 
 json_response([
-    'staff' => $staff,
-    'licenses' => $licenseStmt->fetchAll(),
+    'staff' => $stmt->fetchAll()
 ]);
