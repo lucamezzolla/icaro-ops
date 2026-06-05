@@ -1,215 +1,176 @@
 const API = {
-  me: "api/public/auth/me.php",
-  myStaff: "api/public/staff/my-staff.php",
-  candidates: role => `api/public/staff/candidates.php${role ? `?role=${encodeURIComponent(role)}` : ""}`,
-  hire: "api/public/staff/hire.php"
+  list: "api/public/staff/list.php",
+  candidates: "api/public/staff/candidates.php",
+  hire: "api/public/staff/hire.php",
+  detail: id => `api/public/staff/detail.php?staffId=${encodeURIComponent(id)}`
 };
 
-let currentRoleFilter = "";
+let staffRows = [];
 
 document.addEventListener("DOMContentLoaded", async () => {
   startUtcClock();
-
-  document.querySelector("#refreshButton")?.addEventListener("click", loadStaffPage);
-
-  document.querySelectorAll("[data-role-filter]").forEach(button => {
-    button.addEventListener("click", async () => {
-      currentRoleFilter = button.dataset.roleFilter || "";
-      await loadCandidates();
-    });
-  });
-
-  await loadStaffPage();
+  document.querySelector("#refreshButton")?.addEventListener("click", loadStaff);
+  document.querySelector("#addStaffButton")?.addEventListener("click", openAddStaffDialog);
+  await loadStaff();
 });
 
-async function loadStaffPage() {
+async function loadStaff() {
   hideError();
-
   try {
-    const me = await getJson(API.me);
-    renderCompany(me);
-
-    await Promise.all([
-      loadMyStaff(),
-      loadCandidates()
-    ]);
+    const data = await getJson(API.list);
+    staffRows = Array.isArray(data) ? data : (data.staff || data.rows || []);
+    renderSummary(staffRows);
+    renderStaff(staffRows);
   } catch (error) {
-    showError(error.message || "Unable to load staff page.");
+    showError(error.message || "Unable to load staff.");
   }
 }
 
-function renderCompany(me) {
-  document.querySelector("#companySummary").innerHTML = `
-    ${summaryRow("Owner", me.owner_name)}
-    ${summaryRow("Company", me.company_name)}
-    ${summaryRow("Budget", `${money(me.budget_amount)} ${me.currency_code}`)}
-    ${summaryRow("Base", `${me.base_airport.icao_code}${me.base_airport.iata_code ? " / " + me.base_airport.iata_code : ""}`)}
+function renderSummary(rows) {
+  const pilots = rows.filter(s => s.staff_role === "PILOT").length;
+  const techs = rows.filter(s => s.staff_role === "TECHNICIAN").length;
+  document.querySelector("#staffSummary").innerHTML = `
+    ${summaryRow("Total", rows.length)}
+    ${summaryRow("Pilots", pilots)}
+    ${summaryRow("Techs", techs)}
   `;
 }
 
-async function loadMyStaff() {
-  const rows = await getJson(API.myStaff);
-  const list = document.querySelector("#myStaffList");
-
+function renderStaff(rows) {
+  const tbody = document.querySelector("#staffTableBody");
   if (!rows.length) {
-    list.innerHTML = `<p class="muted">No staff hired yet. Hire at least two pilots before dispatching your Cessna.</p>`;
+    tbody.innerHTML = `<tr><td colspan="7">No staff hired yet.</td></tr>`;
     return;
   }
 
-  list.innerHTML = rows.map(row => staffCard(row, false)).join("");
-}
+  tbody.innerHTML = rows.map(s => `
+    <tr>
+      <td><strong>${escapeHtml(s.display_name || s.full_name || "-")}</strong></td>
+      <td>${escapeHtml(s.staff_role || "-")}</td>
+      <td><span class="badge ${s.employment_status === "ACTIVE" ? "good" : "warn"}">${escapeHtml(s.employment_status || "-")}</span></td>
+      <td>${escapeHtml(s.reliability_score ?? "-")}</td>
+      <td>${escapeHtml(s.fatigue_score ?? "-")}</td>
+      <td>${money(s.salary_per_flight || 0)} ${escapeHtml(s.currency_code || "EUR")}</td>
+      <td><button type="button" data-staff-detail="${s.company_staff_id || s.staff_id || s.id}">Details</button></td>
+    </tr>
+  `).join("");
 
-async function loadCandidates() {
-  const rows = await getJson(API.candidates(currentRoleFilter));
-  const list = document.querySelector("#candidateList");
-
-  if (!rows.length) {
-    list.innerHTML = `<p class="muted">No candidates currently available.</p>`;
-    return;
-  }
-
-  list.innerHTML = rows.map(row => staffCard(row, true)).join("");
-
-  list.querySelectorAll("[data-hire-candidate]").forEach(button => {
-    button.addEventListener("click", async () => {
-      const candidateId = Number(button.dataset.hireCandidate);
-
-      if (!confirm("Hire this candidate? The hiring bonus will be paid now.")) {
-        return;
-      }
-
-      try {
-        await postJson(API.hire, { candidate_id: candidateId });
-        await loadStaffPage();
-      } catch (error) {
-        showError(error.message || "Unable to hire candidate.");
-      }
-    });
+  tbody.querySelectorAll("[data-staff-detail]").forEach(button => {
+    button.addEventListener("click", () => openStaffDetail(Number(button.dataset.staffDetail)));
   });
 }
 
-function staffCard(row, isCandidate) {
-  const roleLabel = row.staff_role === "PILOT" ? "Pilot" : "Technician";
-  const mainHours = row.staff_role === "PILOT"
-    ? `${row.flight_hours_total} flight h`
-    : `${row.aircraft_maintenance_hours_total} maint. h`;
+async function openStaffDetail(staffId) {
+  const dialog = document.querySelector("#staffDetailDialog");
+  const title = document.querySelector("#staffDetailTitle");
+  const content = document.querySelector("#staffDetailContent");
+  title.textContent = "Staff member";
+  content.textContent = "Loading...";
+  dialog.showModal();
 
-  return `
-    <article class="staff-card">
-      <h3>${escapeHtml(row.display_name)}</h3>
-      <div class="badges">
-        <span class="badge">${escapeHtml(roleLabel)}</span>
-        <span class="badge">${escapeHtml(row.experience_level)}</span>
-        <span class="badge">${escapeHtml(mainHours)}</span>
+  try {
+    const data = await getJson(API.detail(staffId));
+    const staff = data.staff || data;
+    const licenses = data.licenses || [];
+    title.textContent = staff.display_name || staff.full_name || "Staff member";
+    content.innerHTML = `
+      <div class="detail-grid">
+        ${section("Identity", [
+          ["Name", staff.display_name || staff.full_name],
+          ["Role", staff.staff_role],
+          ["Status", staff.employment_status],
+          ["Hired at UTC", staff.hired_at_utc || staff.created_at_utc]
+        ])}
+        ${section("Personality", [
+          ["Reliability", staff.reliability_score],
+          ["Fatigue", staff.fatigue_score],
+          ["Courage", staff.courage_score],
+          ["Fear", staff.fear_score],
+          ["Stress", staff.stress_score]
+        ])}
+        ${section("Compensation", [
+          ["Salary per flight", `${money(staff.salary_per_flight)} ${staff.currency_code || "EUR"}`],
+          ["Revenue share", `${staff.revenue_share_percent || 0}%`]
+        ])}
+        <section class="detail-section">
+          <h3>Licenses</h3>
+          ${
+            licenses.length
+              ? `<dl class="detail-list">${licenses.map(l => `
+                ${detailRow("Code", l.license_code || l.code)}
+                ${detailRow("Name", l.license_name || l.name || "-")}
+              `).join("")}</dl>`
+              : `<p class="muted">No licenses found.</p>`
+          }
+        </section>
       </div>
+    `;
+  } catch (error) {
+    content.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load staff detail.")}</div>`;
+  }
+}
 
-      <div class="metrics">
-        <div><strong>${row.fear_score}</strong><span>Fear</span></div>
-        <div><strong>${row.courage_score}</strong><span>Courage</span></div>
-        <div><strong>${row.stress_tolerance_score}</strong><span>Stress</span></div>
-        <div><strong>${row.reliability_score}</strong><span>Reliability</span></div>
-        <div><strong>${row.discipline_score}</strong><span>Discipline</span></div>
-        <div><strong>${row.teamwork_score}</strong><span>Teamwork</span></div>
-        <div><strong>${row.ambition_score}</strong><span>Ambition</span></div>
-        <div><strong>${row.fatigue_risk_score}</strong><span>Fatigue risk</span></div>
-      </div>
+async function openAddStaffDialog() {
+  const dialog = document.querySelector("#addStaffDialog");
+  const list = document.querySelector("#candidateList");
+  list.textContent = "Loading candidates...";
+  dialog.showModal();
 
-      <p class="license-text"><strong>Licenses:</strong> ${escapeHtml(row.licenses_summary || "-")}</p>
+  try {
+    const data = await getJson(API.candidates);
+    const candidates = Array.isArray(data) ? data : (data.candidates || data.rows || []);
+    if (!candidates.length) {
+      list.innerHTML = `<p class="muted">No candidates available right now.</p>`;
+      return;
+    }
+    list.innerHTML = candidates.map(c => `
+      <article class="candidate-card">
+        <div>
+          <strong>${escapeHtml(c.display_name || c.full_name || "-")}</strong>
+          <p class="muted">${escapeHtml(c.staff_role || "-")} · Reliability ${escapeHtml(c.reliability_score ?? "-")} · Salary ${money(c.salary_per_flight || 0)} ${escapeHtml(c.currency_code || "EUR")}</p>
+        </div>
+        <button type="button" data-hire-candidate="${c.candidate_id || c.id}">Hire</button>
+      </article>
+    `).join("");
 
-      <p>
-        <strong>Compensation:</strong>
-        ${money(row.salary_per_flight)} ${escapeHtml(row.currency_code)} / flight,
-        ${money(row.daily_retainer)} ${escapeHtml(row.currency_code)} / day,
-        ${escapeHtml(row.revenue_share_percent)}% revenue share
-      </p>
+    list.querySelectorAll("[data-hire-candidate]").forEach(button => {
+      button.addEventListener("click", async () => {
+        try {
+          await postJson(API.hire, { candidate_id: Number(button.dataset.hireCandidate) });
+          dialog.close();
+          await loadStaff();
+        } catch (error) {
+          alert(error.message || "Unable to hire candidate.");
+        }
+      });
+    });
+  } catch (error) {
+    list.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load candidates.")}</div>`;
+  }
+}
 
-      ${isCandidate ? `<p><strong>Hiring bonus:</strong> ${money(row.hiring_bonus)} ${escapeHtml(row.currency_code)}</p>` : ""}
-      ${isCandidate ? `<button type="button" data-hire-candidate="${row.candidate_id}">Hire</button>` : ""}
-    </article>
-  `;
+function section(title, rows) {
+  return `<section class="detail-section"><h3>${escapeHtml(title)}</h3><dl class="detail-list">${rows.map(([k,v]) => detailRow(k, v)).join("")}</dl></section>`;
 }
 
 async function getJson(url) {
-  const response = await fetch(url, {
-    headers: { "Accept": "application/json" },
-    credentials: "same-origin"
-  });
-
+  const response = await fetch(url, { headers: { "Accept": "application/json" }, credentials: "same-origin" });
   const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(body?.message || body?.error || `Request failed: ${response.status}`);
-  }
-
+  if (!response.ok) throw new Error(body?.message || body?.error || `Request failed: ${response.status}`);
   return body;
 }
 
 async function postJson(url, payload) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json"
-    },
-    credentials: "same-origin",
-    body: JSON.stringify(payload)
-  });
-
+  const response = await fetch(url, { method: "POST", headers: { "Accept": "application/json", "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
   const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(body?.message || body?.error || `Request failed: ${response.status}`);
-  }
-
+  if (!response.ok) throw new Error(body?.message || body?.error || `Request failed: ${response.status}`);
   return body;
 }
 
-function summaryRow(label, value) {
-  return `
-    <div>
-      <dt>${escapeHtml(label)}</dt>
-      <dd>${escapeHtml(value ?? "-")}</dd>
-    </div>
-  `;
-}
-
-function startUtcClock() {
-  const clock = document.querySelector("#utcClock");
-
-  function tick() {
-    const now = new Date();
-    clock.textContent = now.toISOString().replace("T", " ").slice(0, 19) + " UTC";
-  }
-
-  tick();
-  setInterval(tick, 1000);
-}
-
-function money(value) {
-  const numeric = Number(value ?? 0);
-  return numeric.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-}
-
-function showError(message) {
-  const error = document.querySelector("#pageError");
-  error.hidden = false;
-  error.textContent = message;
-}
-
-function hideError() {
-  const error = document.querySelector("#pageError");
-  error.hidden = true;
-  error.textContent = "";
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+function summaryRow(label, value) { return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? "-")}</dd></div>`; }
+function detailRow(label, value) { return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? "-")}</dd></div>`; }
+function startUtcClock() { const c = document.querySelector("#utcClock"); function t(){ c.textContent = new Date().toISOString().replace("T"," ").slice(0,19)+" UTC"; } t(); setInterval(t,1000); }
+function money(value) { return Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function showError(message) { const e = document.querySelector("#pageError"); e.hidden = false; e.textContent = message; }
+function hideError() { const e = document.querySelector("#pageError"); e.hidden = true; e.textContent = ""; }
+function escapeHtml(value) { return String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }

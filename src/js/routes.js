@@ -1,308 +1,242 @@
 const API = {
-  me: "api/public/auth/me.php",
   routes: "api/public/routes/list.php",
-  createRoute: "api/public/routes/create.php",
-  updateRoute: "api/public/routes/update.php",
-  deleteRoute: "api/public/routes/delete.php",
+  create: "api/public/routes/create.php",
+  detail: id => `api/public/routes/detail.php?routeId=${encodeURIComponent(id)}`,
+  preview: "api/public/routes/preview.php",
   startFlight: "api/public/flights/start-scheduled.php"
 };
 
-let routeEditMode = false;
-let editingRouteId = null;
+let routes = [];
 
 document.addEventListener("DOMContentLoaded", async () => {
   startUtcClock();
-
-  document.querySelector("#refreshButton")?.addEventListener("click", loadRoutesPage);
-
-  document.querySelector("#routeForm")?.addEventListener("submit", async event => {
-    event.preventDefault();
-    await saveRoute();
-  });
-
-  ensureCancelEditButton();
-  await loadRoutesPage();
+  document.querySelector("#refreshButton")?.addEventListener("click", loadRoutes);
+  document.querySelector("#addRouteButton")?.addEventListener("click", openAddRouteDialog);
+  document.querySelector("#previewRouteButton")?.addEventListener("click", previewRoute);
+  document.querySelector("#routeForm")?.addEventListener("submit", saveRoute);
+  await loadRoutes();
 });
 
-async function loadRoutesPage() {
+async function loadRoutes() {
   hideError();
-
   try {
-    const me = await getJson(API.me);
-    renderCompany(me);
-    await loadRoutes();
+    routes = await getJson(API.routes);
+    renderSummary(routes);
+    renderRoutes(routes);
   } catch (error) {
-    showError(error.message || "Unable to load routes page.");
+    showError(error.message || "Unable to load routes.");
   }
 }
 
-function renderCompany(me) {
-  document.querySelector("#companySummary").innerHTML = `
-    ${summaryRow("Owner", me.owner_name)}
-    ${summaryRow("Company", me.company_name)}
-    ${summaryRow("Budget", `${money(me.budget_amount)} ${me.currency_code}`)}
-    ${summaryRow("Base", `${me.base_airport.icao_code}${me.base_airport.iata_code ? " / " + me.base_airport.iata_code : ""}`)}
+function renderSummary(rows) {
+  const active = rows.filter(r => r.status === "ACTIVE").length;
+  const ready = rows.filter(r => r.dispatch_readiness === "READY").length;
+  document.querySelector("#routesSummary").innerHTML = `
+    ${summaryRow("Total", rows.length)}
+    ${summaryRow("Active", active)}
+    ${summaryRow("Ready", ready)}
   `;
 }
 
-async function loadRoutes() {
-  const rows = await getJson(API.routes);
-  const list = document.querySelector("#routesList");
-
+function renderRoutes(rows) {
+  const tbody = document.querySelector("#routesTableBody");
   if (!rows.length) {
-    list.innerHTML = `<p class="muted">No routes yet. Create a daily route to start scheduled operations.</p>`;
+    tbody.innerHTML = `<tr><td colspan="8">No routes yet.</td></tr>`;
     return;
   }
 
-  list.innerHTML = rows.map(route => `
-    <article class="route-card">
-      <h3>${escapeHtml(route.origin_airport_icao_code)} → ${escapeHtml(route.destination_airport_icao_code)}</h3>
-      <p>${escapeHtml(route.origin_airport_name)} → ${escapeHtml(route.destination_airport_name)}</p>
-      <p>
-        <strong>${escapeHtml(route.manufacturer || "Aircraft")}${route.model_name ? " " + escapeHtml(route.model_name) : ""}</strong>
-        ${route.registration_code ? `· ${escapeHtml(route.registration_code)}` : "· No aircraft assigned"}
-      </p>
-      <p>
-        Flight crew:
-        ${escapeHtml(route.pilot_1_name || "Not assigned")} /
-        ${escapeHtml(route.pilot_2_name || "Not assigned")}
-      </p>
-      <p>
-        Dispatch:
-        ${escapeHtml(route.dispatch_readiness || "-")}
-      </p>
-      <div class="route-metrics">
-        <div><strong>${escapeHtml(route.scheduled_departure_time_utc)}</strong><span>UTC departure</span></div>
-        <div><strong>${escapeHtml(route.planned_distance_km)} km</strong><span>Distance</span></div>
-        <div><strong>${escapeHtml(route.planned_duration_minutes)} min</strong><span>Duration</span></div>
-        <div><strong>${money(route.ticket_price)} ${escapeHtml(route.currency_code)}</strong><span>Ticket</span></div>
-      </div>
-      <div class="route-actions">
-        <button type="button" data-start-route="${route.route_id}">Start test flight now</button>
-        <button type="button" data-edit-route="${route.route_id}">Edit</button>
-        <button type="button" data-delete-route="${route.route_id}">Delete</button>
-      </div>
-    </article>
+  tbody.innerHTML = rows.map(route => `
+    <tr>
+      <td><strong>${escapeHtml(route.origin_airport_icao_code)} → ${escapeHtml(route.destination_airport_icao_code)}</strong></td>
+      <td>${escapeHtml(route.scheduled_departure_time_utc || "-")}</td>
+      <td>${escapeHtml(route.registration_code || "Unassigned")}</td>
+      <td>${escapeHtml(route.pilot_1_name || "-")} / ${escapeHtml(route.pilot_2_name || "-")}</td>
+      <td>${escapeHtml(route.planned_duration_minutes || "-")} min</td>
+      <td>${money(route.ticket_price)} ${escapeHtml(route.currency_code || "")}</td>
+      <td><span class="badge ${route.dispatch_readiness === "READY" ? "good" : "warn"}">${escapeHtml(route.dispatch_readiness || route.status || "-")}</span></td>
+      <td>
+        <div class="button-row">
+          <button type="button" data-route-detail="${route.route_id}">Details</button>
+          <button type="button" data-start-route="${route.route_id}" class="secondary">Start</button>
+        </div>
+      </td>
+    </tr>
   `).join("");
 
-  list.querySelectorAll("[data-start-route]").forEach(button => {
+  tbody.querySelectorAll("[data-route-detail]").forEach(button => {
+    button.addEventListener("click", () => openRouteDetail(Number(button.dataset.routeDetail)));
+  });
+
+  tbody.querySelectorAll("[data-start-route]").forEach(button => {
     button.addEventListener("click", async () => {
-      const routeId = Number(button.dataset.startRoute);
-
-      if (!confirm("Start this scheduled flight now for testing?")) {
-        return;
-      }
-
+      if (!confirm("Start this scheduled flight now for testing?")) return;
       try {
-        const flight = await postJson(API.startFlight, {
-          route_id: routeId,
-          force_now: true
-        });
-
-        alert(`Flight ${flight.flight_code} is now in flight. Passengers: ${flight.passenger_count}/${flight.passenger_capacity}.`);
-        await loadRoutesPage();
+        const flight = await postJson(API.startFlight, { route_id: Number(button.dataset.startRoute), force_now: true });
+        alert(`Flight ${flight.flight_code} is now in flight.`);
+        await loadRoutes();
       } catch (error) {
         showError(error.message || "Unable to start flight.");
       }
     });
   });
-
-  list.querySelectorAll("[data-edit-route]").forEach(button => {
-    button.addEventListener("click", () => {
-      const route = rows.find(item => Number(item.route_id) === Number(button.dataset.editRoute));
-      if (route) {
-        startEditRoute(route);
-      }
-    });
-  });
-
-  list.querySelectorAll("[data-delete-route]").forEach(button => {
-    button.addEventListener("click", async () => {
-      const routeId = Number(button.dataset.deleteRoute);
-      const route = rows.find(item => Number(item.route_id) === routeId);
-
-      if (!confirm(`Delete route ${route?.origin_airport_icao_code || ""} → ${route?.destination_airport_icao_code || ""}?`)) {
-        return;
-      }
-
-      try {
-        const result = await postJson(API.deleteRoute, { route_id: routeId });
-        alert(`Route ${result.action.toLowerCase()}.`);
-        resetRouteForm();
-        await loadRoutesPage();
-      } catch (error) {
-        showError(error.message || "Unable to delete route.");
-      }
-    });
-  });
 }
 
-async function saveRoute() {
-  hideError();
+function openAddRouteDialog() {
+  document.querySelector("#routeForm").reset();
+  document.querySelector("#scheduledTime").value = "10:00";
+  document.querySelector("#ticketPrice").value = "250.00";
+  document.querySelector("#routePreviewPanel").hidden = true;
+  document.querySelector("#routeDialogError").hidden = true;
+  document.querySelector("#routeDialog").showModal();
+}
 
-  const payload = {
+async function previewRoute() {
+  const payload = routeFormPayload();
+  const error = document.querySelector("#routeDialogError");
+  const panel = document.querySelector("#routePreviewPanel");
+  const content = document.querySelector("#routePreviewContent");
+
+  error.hidden = true;
+  panel.hidden = false;
+  content.textContent = "Calculating preview...";
+
+  try {
+    const preview = await postJson(API.preview, payload);
+    content.innerHTML = renderPreview(preview);
+  } catch (err) {
+    panel.hidden = true;
+    error.hidden = false;
+    error.textContent = err.message || "Unable to preview route.";
+  }
+}
+
+async function saveRoute(event) {
+  event.preventDefault();
+  const error = document.querySelector("#routeDialogError");
+  error.hidden = true;
+
+  try {
+    await postJson(API.create, routeFormPayload());
+    document.querySelector("#routeDialog").close();
+    await loadRoutes();
+  } catch (err) {
+    error.hidden = false;
+    error.textContent = err.message || "Unable to create route.";
+  }
+}
+
+function routeFormPayload() {
+  return {
     origin_airport_icao_code: document.querySelector("#originAirport").value.trim().toUpperCase(),
     destination_airport_icao_code: document.querySelector("#destinationAirport").value.trim().toUpperCase(),
     scheduled_departure_time_utc: document.querySelector("#scheduledTime").value,
     ticket_price: Number(document.querySelector("#ticketPrice").value)
   };
-
-  try {
-    if (routeEditMode && editingRouteId) {
-      await postJson(API.updateRoute, {
-        ...payload,
-        route_id: editingRouteId
-      });
-    } else {
-      await postJson(API.createRoute, payload);
-    }
-
-    resetRouteForm();
-    await loadRoutesPage();
-  } catch (error) {
-    showError(error.message || "Unable to save route.");
-  }
 }
 
-function startEditRoute(route) {
-  routeEditMode = true;
-  editingRouteId = Number(route.route_id);
-
-  document.querySelector("#originAirport").value = route.origin_airport_icao_code || "";
-  document.querySelector("#destinationAirport").value = route.destination_airport_icao_code || "";
-  document.querySelector("#scheduledTime").value = String(route.scheduled_departure_time_utc || "").slice(0, 5);
-  document.querySelector("#ticketPrice").value = Number(route.ticket_price || 0);
-
-  const submitButton = document.querySelector('#routeForm button[type="submit"]');
-  if (submitButton) {
-    submitButton.textContent = "Save route changes";
-  }
-
-  const cancelButton = document.querySelector("#cancelEditRouteButton");
-  if (cancelButton) {
-    cancelButton.hidden = false;
-  }
-
-  document.querySelector("#routeForm").scrollIntoView({
-    behavior: "smooth",
-    block: "center"
-  });
-}
-
-function resetRouteForm() {
-  routeEditMode = false;
-  editingRouteId = null;
-
-  document.querySelector("#routeForm")?.reset();
-
-  const submitButton = document.querySelector('#routeForm button[type="submit"]');
-  if (submitButton) {
-    submitButton.textContent = "Create daily route";
-  }
-
-  const cancelButton = document.querySelector("#cancelEditRouteButton");
-  if (cancelButton) {
-    cancelButton.hidden = true;
-  }
-}
-
-function ensureCancelEditButton() {
-  const form = document.querySelector("#routeForm");
-  if (!form || document.querySelector("#cancelEditRouteButton")) {
-    return;
-  }
-
-  const button = document.createElement("button");
-  button.id = "cancelEditRouteButton";
-  button.type = "button";
-  button.textContent = "Cancel edit";
-  button.hidden = true;
-  button.addEventListener("click", resetRouteForm);
-
-  form.appendChild(button);
-}
-
-async function getJson(url) {
-  const response = await fetch(url, {
-    headers: { "Accept": "application/json" },
-    credentials: "same-origin"
-  });
-
-  const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(body?.message || body?.error || `Request failed: ${response.status}`);
-  }
-
-  return body;
-}
-
-async function postJson(url, payload) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Accept": "application/json",
-      "Content-Type": "application/json"
-    },
-    credentials: "same-origin",
-    body: JSON.stringify(payload)
-  });
-
-  const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(body?.message || body?.error || `Request failed: ${response.status}`);
-  }
-
-  return body;
-}
-
-function summaryRow(label, value) {
+function renderPreview(p) {
   return `
-    <div>
-      <dt>${escapeHtml(label)}</dt>
-      <dd>${escapeHtml(value ?? "-")}</dd>
+    <div class="detail-grid">
+      ${section("Route", [
+        ["Route", `${p.origin_airport_icao_code} → ${p.destination_airport_icao_code}`],
+        ["Distance", `${p.planned_distance_km} km`],
+        ["Duration", `${p.planned_duration_minutes} min`],
+        ["Aircraft", `${p.aircraft.manufacturer} ${p.aircraft.model_name}`]
+      ])}
+      ${section("Passengers", [
+        ["Capacity", p.passenger_capacity],
+        ["Low estimate", `${p.estimates.low.passengers} pax · ${money(p.estimates.low.revenue)} ${p.currency_code}`],
+        ["Expected", `${p.estimates.expected.passengers} pax · ${money(p.estimates.expected.revenue)} ${p.currency_code}`],
+        ["High estimate", `${p.estimates.high.passengers} pax · ${money(p.estimates.high.revenue)} ${p.currency_code}`]
+      ])}
+      ${section("Expected economics", [
+        ["Revenue", `${money(p.estimates.expected.revenue)} ${p.currency_code}`],
+        ["Fuel cost", `${money(p.costs.fuel_cost)} ${p.currency_code}`],
+        ["Maintenance cost", `${money(p.costs.maintenance_cost)} ${p.currency_code}`],
+        ["Staff cost", `${money(p.costs.staff_cost)} ${p.currency_code}`],
+        ["Total cost", `${money(p.costs.total_operating_cost)} ${p.currency_code}`],
+        ["Expected profit", `${money(p.estimates.expected.profit)} ${p.currency_code}`]
+      ])}
+      ${section("Notes", [
+        ["Fuel burn", `${p.aircraft.fuel_burn_kg_per_hour} kg/h`],
+        ["Cruise speed", `${p.aircraft.cruise_speed_kmh} km/h`],
+        ["Break-even pax", p.break_even_passengers],
+        ["Recommendation", p.recommendation]
+      ])}
     </div>
   `;
 }
 
-function startUtcClock() {
-  const clock = document.querySelector("#utcClock");
+async function openRouteDetail(routeId) {
+  const dialog = document.querySelector("#routeDetailDialog");
+  const title = document.querySelector("#routeDetailTitle");
+  const content = document.querySelector("#routeDetailContent");
+  title.textContent = "Route";
+  content.textContent = "Loading...";
+  dialog.showModal();
 
-  function tick() {
-    const now = new Date();
-    clock.textContent = now.toISOString().replace("T", " ").slice(0, 19) + " UTC";
+  try {
+    const data = await getJson(API.detail(routeId));
+    const r = data.route;
+    title.textContent = `${r.origin_airport_icao_code} → ${r.destination_airport_icao_code}`;
+    content.innerHTML = `
+      <div class="detail-grid">
+        ${section("Route", [
+          ["Route ID", r.route_id],
+          ["Status", r.status],
+          ["Origin", `${r.origin_airport_name} (${r.origin_airport_icao_code})`],
+          ["Destination", `${r.destination_airport_name} (${r.destination_airport_icao_code})`],
+          ["Departure UTC", r.scheduled_departure_time_utc],
+          ["Recurrence", r.recurrence_type],
+          ["Auto dispatch", r.auto_dispatch_enabled],
+          ["Backup aircraft", r.allow_backup_aircraft]
+        ])}
+        ${section("Aircraft", [
+          ["Registration", r.registration_code || "-"],
+          ["Manufacturer", r.manufacturer || "-"],
+          ["Model", r.model_name || "-"],
+          ["ICAO type", r.icao_type_code || "-"]
+        ])}
+        ${section("Crew", [
+          ["Pilot 1", r.pilot_1_name || "-"],
+          ["Pilot 2", r.pilot_2_name || "-"],
+          ["Ground maintenance", r.technician_name || "Not assigned"]
+        ])}
+        ${section("Economics", [
+          ["Distance", `${r.planned_distance_km} km`],
+          ["Duration", `${r.planned_duration_minutes} min`],
+          ["Ticket", `${money(r.ticket_price)} ${r.currency_code}`],
+          ["Dispatch readiness", r.dispatch_readiness]
+        ])}
+      </div>
+    `;
+  } catch (error) {
+    content.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load route detail.")}</div>`;
   }
-
-  tick();
-  setInterval(tick, 1000);
 }
 
-function money(value) {
-  const numeric = Number(value ?? 0);
-  return numeric.toLocaleString("en-US", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
+function section(title, rows) {
+  return `<section class="detail-section"><h3>${escapeHtml(title)}</h3><dl class="detail-list">${rows.map(([k,v]) => detailRow(k, v)).join("")}</dl></section>`;
 }
 
-function showError(message) {
-  const error = document.querySelector("#pageError");
-  error.hidden = false;
-  error.textContent = message;
+async function getJson(url) {
+  const response = await fetch(url, { headers: { "Accept": "application/json" }, credentials: "same-origin" });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.message || body?.error || `Request failed: ${response.status}`);
+  return body;
 }
 
-function hideError() {
-  const error = document.querySelector("#pageError");
-  error.hidden = true;
-  error.textContent = "";
+async function postJson(url, payload) {
+  const response = await fetch(url, { method: "POST", headers: { "Accept": "application/json", "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
+  const body = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(body?.message || body?.error || `Request failed: ${response.status}`);
+  return body;
 }
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
+function summaryRow(label, value) { return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? "-")}</dd></div>`; }
+function detailRow(label, value) { return `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value ?? "-")}</dd></div>`; }
+function startUtcClock() { const c = document.querySelector("#utcClock"); function t(){ c.textContent = new Date().toISOString().replace("T"," ").slice(0,19)+" UTC"; } t(); setInterval(t,1000); }
+function money(value) { return Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function showError(message) { const e = document.querySelector("#pageError"); e.hidden = false; e.textContent = message; }
+function hideError() { const e = document.querySelector("#pageError"); e.hidden = true; e.textContent = ""; }
+function escapeHtml(value) { return String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }

@@ -11,31 +11,24 @@
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark">IO</div>
-        <div>
-          <strong>Icaro Ops</strong>
-          <span>Route Planning</span>
-        </div>
+        <div><strong>Icaro Ops</strong><span>Routes</span></div>
       </div>
 
       <section class="panel">
-        <h2>Company</h2>
-        <dl id="companySummary" class="summary-list">
-          <div><dt>Status</dt><dd>Loading...</dd></div>
-        </dl>
+        <h2>Routes</h2>
+        <p class="muted">Scheduled daily routes. A route is a commercial promise: aircraft, pilots and timing must support it.</p>
       </section>
 
       <section class="panel">
-        <h2>First route</h2>
-        <p class="muted">
-          Create your first daily route from LIRA to LIML at 10:00 UTC with your Cessna 208.
-        </p>
+        <dl id="routesSummary" class="summary-list">
+          <div><dt>Routes</dt><dd>Loading...</dd></div>
+        </dl>
       </section>
     </aside>
 
     <main class="content-shell">
       <header class="topbar">
-        
-                                <nav>
+        <nav>
           <a href="index.html">Map</a>
           <a href="fleet.html">Fleet</a>
           <a href="staff.html">Staff</a>
@@ -50,62 +43,114 @@
 
       <section class="page-header">
         <div>
-          <p class="eyebrow">Routes</p>
-          <h1>Scheduled route planning</h1>
-          <p>Build your first line route, then start a flight and watch it progress on the map.</p>
+          <p class="eyebrow">Operations</p>
+          <h1>Routes</h1>
+          <p>Manage scheduled routes with compact tables and detailed dialogs.</p>
         </div>
+        <button id="addRouteButton" type="button">Add route</button>
       </section>
 
       <div id="pageError" class="page-error" hidden></div>
 
-      <section class="routes-grid">
+      <section class="table-grid">
         <article class="card">
           <div class="card-header">
             <div>
-              <h2>Create route</h2>
-              <p>Default test route: LIRA → LIML at 10:00 UTC.</p>
-            </div>
-          </div>
-
-          <form id="routeForm" class="route-form">
-            <label>
-              Origin ICAO
-              <input id="originAirport" placeholder="LIRA" maxlength="4" required>
-            </label>
-
-            <label>
-              Destination ICAO
-              <input id="destinationAirport" placeholder="LIML" maxlength="4" required>
-            </label>
-
-            <label>
-              Scheduled UTC time
-              <input id="scheduledTime" type="time" required>
-            </label>
-
-            <label>
-              Ticket price
-              <input id="ticketPrice" type="number" placeholder="145" min="0" step="1" required>
-            </label>
-
-            <button type="submit">Create daily route</button>
-          </form>
-        </article>
-
-        <article class="card wide">
-          <div class="card-header">
-            <div>
-              <h2>My routes</h2>
-              <p>Daily scheduled routes operated by your company.</p>
+              <h2>Scheduled routes</h2>
+              <p>Essential data only. Open details for the full operational view.</p>
             </div>
             <button id="refreshButton" type="button">Refresh</button>
           </div>
 
-          <div id="routesList" class="route-list">Loading...</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Route</th>
+                  <th>Departure UTC</th>
+                  <th>Aircraft</th>
+                  <th>Crew</th>
+                  <th>Duration</th>
+                  <th>Ticket</th>
+                  <th>Status</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="routesTableBody">
+                <tr><td colspan="8">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
         </article>
       </section>
     </main>
   </div>
+
+  <dialog id="routeDialog">
+    <form method="dialog" class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">Route</p>
+          <h2 id="routeDialogTitle">Add route</h2>
+        </div>
+        <button value="close" class="close-button" aria-label="Close">×</button>
+      </header>
+
+      <div class="dialog-body">
+        <div id="routeDialogError" class="page-error" hidden></div>
+
+        <form id="routeForm" class="form-grid">
+          <label>
+            Origin ICAO
+            <input id="originAirport" name="origin_airport_icao_code" maxlength="4" required placeholder="LIRA">
+          </label>
+
+          <label>
+            Destination ICAO
+            <input id="destinationAirport" name="destination_airport_icao_code" maxlength="4" required placeholder="LIPZ">
+          </label>
+
+          <label>
+            Scheduled departure UTC
+            <input id="scheduledTime" name="scheduled_departure_time_utc" type="time" required value="10:00">
+          </label>
+
+          <label>
+            Ticket price
+            <input id="ticketPrice" name="ticket_price" type="number" min="0" step="0.01" value="250.00" required>
+          </label>
+
+          <div class="form-actions">
+            <button id="previewRouteButton" type="button">Preview economics</button>
+            <button id="saveRouteButton" type="submit">Create route</button>
+          </div>
+        </form>
+
+        <section id="routePreviewPanel" class="preview-panel" hidden>
+          <h3>Economic preview</h3>
+          <div id="routePreviewContent"></div>
+        </section>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="routeDetailDialog">
+    <form method="dialog" class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">Route details</p>
+          <h2 id="routeDetailTitle">Route</h2>
+        </div>
+        <button value="close" class="close-button" aria-label="Close">×</button>
+      </header>
+
+      <div id="routeDetailContent" class="dialog-body">Loading...</div>
+
+      <footer class="dialog-footer">
+        <button value="close">Close</button>
+      </footer>
+    </form>
+  </dialog>
 
   <script src="src/js/auth-guard.js"></script>
   <script src="src/js/routes.js"></script>
