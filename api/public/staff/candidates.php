@@ -11,14 +11,11 @@ $pdo = db();
 
 $companyStmt = $pdo->prepare("
     SELECT
-      c.id,
-      c.currency_code,
-      c.base_airport_icao_code,
-      a.world_region_code
-    FROM companies c
-    LEFT JOIN airports a
-      ON a.icao_code = c.base_airport_icao_code
-    WHERE c.id = :company_id
+      id,
+      currency_code,
+      base_airport_icao_code
+    FROM companies
+    WHERE id = :company_id
     LIMIT 1
 ");
 $companyStmt->execute(['company_id' => $companyId]);
@@ -27,6 +24,8 @@ $company = $companyStmt->fetch() ?: [
     'base_airport_icao_code' => null,
     'world_region_code' => 'EUROPE',
 ];
+
+$company['world_region_code'] = $company['world_region_code'] ?? 'EUROPE';
 
 ensure_staff_candidate_market($pdo, $companyId, $company);
 
