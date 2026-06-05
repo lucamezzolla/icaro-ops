@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Icaro Ops - Settings</title>
+  <link rel="stylesheet" href="src/css/settings.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">IO</div>
+        <div>
+          <strong>Icaro Ops</strong>
+          <span>Settings</span>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h2>Settings</h2>
+        <p class="muted">
+          Game preferences, development tools and local test actions.
+        </p>
+      </section>
+
+      <section class="panel">
+        <a class="side-link" href="index.html">Back to Map</a>
+      </section>
+    </aside>
+
+    <main class="content-shell">
+      <header class="topbar">
+                <nav>
+          <a href="index.html">Map</a>
+          <a href="fleet.html">Fleet</a>
+          <a href="staff.html">Staff</a>
+          <a href="routes.html">Routes</a>
+          <a href="mailbox.html">Mailbox</a>
+          <a href="#">Finance</a>
+          <a href="settings.html" class="active">Settings</a>
+        </nav>
+        <div id="utcClock" class="utc-clock">---- -- -- --:--:-- UTC</div>
+      </header>
+
+      <section class="page-header">
+        <div>
+          <p class="eyebrow">Settings</p>
+          <h1>Operations settings</h1>
+          <p>Manage local options and development actions for this test world.</p>
+        </div>
+      </section>
+
+      <div id="pageError" class="page-error" hidden></div>
+      <div id="pageSuccess" class="page-success" hidden></div>
+
+      <section class="settings-grid">
+        <article class="card">
+          <div class="card-header">
+            <div>
+              <h2>Map options</h2>
+              <p>These settings are local browser preferences for the current UI.</p>
+            </div>
+          </div>
+
+          <label class="switch-row">
+            <span>
+              <strong>Show bases on map</strong>
+              <small>Show or hide base markers when opening the map.</small>
+            </span>
+            <input id="showBasesToggle" type="checkbox">
+          </label>
+        </article>
+
+        <article class="card danger-card">
+          <div class="card-header">
+            <div>
+              <h2>Development reset</h2>
+              <p>Delete your current local test player, company and all related game data.</p>
+            </div>
+          </div>
+
+          <div class="warning">
+            This action removes your user account, company, aircraft, routes, flights, staff, mailbox and events.
+            It is intended only for local development testing.
+          </div>
+
+          <label>
+            Type <code>RESET_MY_ICARO_OPS_DATA</code> to enable reset
+            <input id="resetConfirmInput" autocomplete="off" spellcheck="false">
+          </label>
+
+          <button id="resetAccountButton" type="button" disabled>
+            Delete my development account and restart signup
+          </button>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <script src="src/js/auth-guard.js"></script>
+  <script src="src/js/settings.js"></script>
+</body>
+</html>
