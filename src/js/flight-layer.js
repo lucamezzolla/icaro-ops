@@ -14,6 +14,7 @@ const ICARO_FLIGHT_API = {
 };
 
 let icaroFlightLayer = null;
+let icaroSelectedFlightPathLayer = null;
 
 document.addEventListener("DOMContentLoaded", () => {
   setTimeout(initIcaroFlightLayer, 500);
@@ -75,19 +76,49 @@ async function refreshIcaroFlights() {
         </div>
       `);
 
-      marker.addTo(icaroFlightLayer);
+      marker.on("click", () => {
+        showSelectedFlightPath(flight);
+      });
 
-      L.polyline([
-        [Number(flight.origin_latitude), Number(flight.origin_longitude)],
-        [Number(flight.destination_latitude), Number(flight.destination_longitude)]
-      ], {
-        weight: 2,
-        opacity: 0.55
-      }).addTo(icaroFlightLayer);
+      marker.addTo(icaroFlightLayer);
     }
   } catch {
     // Silent for now. The main map must remain usable.
   }
+}
+
+function showSelectedFlightPath(flight) {
+  if (!window.icaroOpsMap || !icaroFlightLayer) {
+    return;
+  }
+
+  if (icaroSelectedFlightPathLayer) {
+    icaroFlightLayer.removeLayer(icaroSelectedFlightPathLayer);
+    icaroSelectedFlightPathLayer = null;
+  }
+
+  const origin = [
+    Number(flight.origin_latitude),
+    Number(flight.origin_longitude)
+  ];
+
+  const destination = [
+    Number(flight.destination_latitude),
+    Number(flight.destination_longitude)
+  ];
+
+  if ([...origin, ...destination].some(Number.isNaN)) {
+    return;
+  }
+
+  icaroSelectedFlightPathLayer = L.polyline([origin, destination], {
+    color: "#e53935",
+    weight: 4,
+    opacity: 0.88,
+    dashArray: "8 7",
+    lineCap: "round",
+    lineJoin: "round"
+  }).addTo(icaroFlightLayer);
 }
 
 function interpolateFlightPosition(flight) {
@@ -110,7 +141,7 @@ function interpolateFlightPosition(flight) {
 
 function aircraftMarkerSvg() {
   return `
-    <div class="search-airport-marker">
+    <div class="flight-aircraft-marker">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5Z"/>
       </svg>

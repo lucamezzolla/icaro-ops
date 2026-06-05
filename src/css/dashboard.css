@@ -489,3 +489,22 @@ body {
   height: 22px;
   fill: #07101d;
 }
+
+/* Active flight aircraft marker, IVAO Webeye-inspired red. */
+.flight-aircraft-marker {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background: radial-gradient(circle at 35% 30%, #ff796f, #e53935 58%, #9f1515);
+  box-shadow: 0 8px 22px rgba(0,0,0,0.42);
+}
+
+.flight-aircraft-marker svg {
+  width: 21px;
+  height: 21px;
+  fill: #ffffff;
+  transform: rotate(45deg);
+}

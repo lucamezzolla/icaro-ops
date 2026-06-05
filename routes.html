@@ -66,22 +66,22 @@
           <form id="routeForm" class="route-form">
             <label>
               Origin ICAO
-              <input id="originAirport" value="LIRA" maxlength="4" required>
+              <input id="originAirport" placeholder="LIRA" maxlength="4" required>
             </label>
 
             <label>
               Destination ICAO
-              <input id="destinationAirport" value="LIML" maxlength="4" required>
+              <input id="destinationAirport" placeholder="LIML" maxlength="4" required>
             </label>
 
             <label>
               Scheduled UTC time
-              <input id="scheduledTime" type="time" value="10:00" required>
+              <input id="scheduledTime" type="time" required>
             </label>
 
             <label>
               Ticket price
-              <input id="ticketPrice" type="number" value="145" min="0" step="1" required>
+              <input id="ticketPrice" type="number" placeholder="145" min="0" step="1" required>
             </label>
 
             <button type="submit">Create daily route</button>
