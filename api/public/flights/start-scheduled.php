@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
+require __DIR__ . '/../../lib/flight-completion.php';
 require __DIR__ . '/../../lib/reputation.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -356,63 +357,4 @@ function calculate_pilot_cost(PDO $pdo, int $companyId, array $route, float $rev
     $pilotRevenueSharePercent = (float)($staff['pilot_revenue_share'] ?? 0);
 
     return $pilotSalary + ($revenue * $pilotRevenueSharePercent / 100.0);
-}
-
-function complete_due_flights(PDO $pdo, int $companyId): void
-{
-    $stmt = $pdo->prepare("
-        SELECT id, aircraft_id, destination_airport_icao_code, profit_amount
-        FROM scheduled_flight_instances
-        WHERE company_id = :company_id
-          AND status = 'IN_FLIGHT'
-          AND scheduled_arrival_at_utc <= UTC_TIMESTAMP()
-        FOR UPDATE
-    ");
-    $stmt->execute(['company_id' => $companyId]);
-    $flights = $stmt->fetchAll();
-
-    foreach ($flights as $flight) {
-        $pdo->prepare("
-            UPDATE scheduled_flight_instances
-            SET
-              status = 'COMPLETED',
-              actual_arrival_at_utc = UTC_TIMESTAMP()
-            WHERE id = :id
-        ")->execute(['id' => (int)$flight['id']]);
-
-        $pdo->prepare("
-            UPDATE company_aircraft
-            SET
-              status = 'AVAILABLE',
-              current_airport_icao_code = :destination
-            WHERE id = :aircraft_id
-              AND company_id = :company_id
-        ")->execute([
-            'destination' => $flight['destination_airport_icao_code'],
-            'aircraft_id' => (int)$flight['aircraft_id'],
-            'company_id' => $companyId,
-        ]);
-
-        $pdo->prepare("
-            UPDATE companies
-            SET budget_amount = budget_amount + :profit
-            WHERE id = :company_id
-        ")->execute([
-            'profit' => (float)$flight['profit_amount'],
-            'company_id' => $companyId,
-        ]);
-
-        $profit = (float)$flight['profit_amount'];
-
-        apply_reputation_event(
-            $pdo,
-            $companyId,
-            $profit > 0 ? 'FLIGHT_COMPLETED_PROFITABLE' : 'FLIGHT_COMPLETED_BREAK_EVEN_OR_LOSS',
-            'FLIGHT',
-            (int)$flight['id'],
-            $profit > 0
-                ? 'Flight completed successfully with positive profit.'
-                : 'Flight completed successfully but did not generate positive profit.'
-        );
-    }
 }
