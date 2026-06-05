@@ -56,7 +56,7 @@ async function refreshIcaroFlights() {
 
       const marker = L.marker([position.lat, position.lng], {
         icon: L.divIcon({
-          className: "",
+          className: "flight-aircraft-leaflet-icon",
           html: aircraftMarkerSvg(calculateBearingDegrees(
             Number(flight.origin_latitude),
             Number(flight.origin_longitude),
@@ -129,18 +129,45 @@ function showSelectedFlightPath(flight) {
 function interpolateFlightPosition(flight) {
   const p = Math.max(0, Math.min(100, Number(flight.progress_percent || 0))) / 100;
 
-  const oLat = Number(flight.origin_latitude);
-  const oLng = Number(flight.origin_longitude);
-  const dLat = Number(flight.destination_latitude);
-  const dLng = Number(flight.destination_longitude);
+  const origin = L.latLng(
+    Number(flight.origin_latitude),
+    Number(flight.origin_longitude)
+  );
 
-  if ([oLat, oLng, dLat, dLng].some(Number.isNaN)) {
+  const destination = L.latLng(
+    Number(flight.destination_latitude),
+    Number(flight.destination_longitude)
+  );
+
+  if (
+    Number.isNaN(origin.lat) ||
+    Number.isNaN(origin.lng) ||
+    Number.isNaN(destination.lat) ||
+    Number.isNaN(destination.lng) ||
+    !window.icaroOpsMap
+  ) {
     return null;
   }
 
+  /*
+   * Important:
+   * Interpolate in Leaflet layer-point space, not directly in lat/lng.
+   * This keeps the aircraft marker exactly on the visible route line
+   * at the current map zoom/projection.
+   */
+  const originPoint = window.icaroOpsMap.latLngToLayerPoint(origin);
+  const destinationPoint = window.icaroOpsMap.latLngToLayerPoint(destination);
+
+  const currentPoint = L.point(
+    originPoint.x + (destinationPoint.x - originPoint.x) * p,
+    originPoint.y + (destinationPoint.y - originPoint.y) * p
+  );
+
+  const currentLatLng = window.icaroOpsMap.layerPointToLatLng(currentPoint);
+
   return {
-    lat: oLat + (dLat - oLat) * p,
-    lng: oLng + (dLng - oLng) * p
+    lat: currentLatLng.lat,
+    lng: currentLatLng.lng
   };
 }
 

@@ -531,3 +531,31 @@ body {
   transform: translate(-50%, -50%) rotate(var(--flight-bearing, 0deg));
   transform-origin: 50% 50%;
 }
+
+/* Leaflet active flight icon: transparent wrapper, centered marker. */
+.flight-aircraft-leaflet-icon {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.flight-aircraft-marker {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  display: block;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background: radial-gradient(circle at 35% 30%, #ff796f, #e53935 58%, #9f1515);
+  box-shadow: 0 8px 22px rgba(0,0,0,0.42);
+}
+
+.flight-aircraft-marker svg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 21px;
+  height: 21px;
+  fill: #ffffff;
+  transform: translate(-50%, -50%) rotate(var(--flight-bearing, 0deg));
+  transform-origin: 50% 50%;
+}
