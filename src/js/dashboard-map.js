@@ -1142,3 +1142,94 @@ function escapeHtml(value) {
     return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
   }
 })();
+
+/*
+ * Definitive sidebar refresh using current company API shape.
+ * company/current.php returns capacity data inside base_airport.
+ */
+(function setupDefinitiveCompanySidebarRefresh() {
+  const REFRESH_MS = 5000;
+
+  document.addEventListener("DOMContentLoaded", () => {
+    refreshCompanySidebar();
+    setInterval(refreshCompanySidebar, REFRESH_MS);
+  });
+
+  async function refreshCompanySidebar() {
+    try {
+      await fetch("api/public/flights/active.php", {
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin"
+      }).catch(() => null);
+
+      const response = await fetch("api/public/company/current.php", {
+        headers: { "Accept": "application/json" },
+        credentials: "same-origin"
+      });
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      const base = data.base_airport || {};
+
+      setSidebarValue("Budget", `${formatMoney(data.budget_amount)} ${data.currency_code}`);
+      setSidebarValue("Reputation", `${Number(data.reputation_score)}/100`, Number(data.reputation_score) < 51 ? "bad" : "");
+
+      setSidebarValue("Aircraft", `${base.aircraft_owned_count} / ${base.max_aircraft_managed}`);
+      setSidebarValue("At base", `${base.aircraft_at_base_count} / ${base.max_aircraft_on_ground}`);
+      setSidebarValue("In flight", base.aircraft_in_flight_count);
+      setSidebarValue("Maintenance", base.aircraft_maintenance_count);
+      setSidebarValue("Free fleet slots", base.free_managed_aircraft_slots);
+      setSidebarValue("Free ground slots", base.free_ground_aircraft_slots);
+    } catch {
+      // Keep dashboard usable during transient API failures.
+    }
+  }
+
+  function setSidebarValue(label, value, stateClass = "") {
+    if (value === undefined || value === null || String(value).includes("undefined")) {
+      return;
+    }
+
+    const dt = [...document.querySelectorAll("dt")].find(item => {
+      return normalizeLabel(item.textContent) === normalizeLabel(label);
+    });
+
+    if (!dt) {
+      return;
+    }
+
+    const dd = dt.parentElement?.querySelector("dd") || dt.nextElementSibling;
+
+    if (!dd) {
+      return;
+    }
+
+    dd.textContent = String(value);
+
+    if (normalizeLabel(label) === "reputation") {
+      dd.classList.remove("reputation-value", "bad");
+      dd.classList.add("reputation-value");
+
+      if (stateClass) {
+        dd.classList.add(stateClass);
+      }
+    }
+  }
+
+  function formatMoney(value) {
+    return Number(value || 0).toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+  function normalizeLabel(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  }
+})();
