@@ -575,3 +575,13 @@ body {
 .reputation-value.bad {
   color: #ff8f8f;
 }
+
+/* Reputation is neutral by default; red only when it drops below 51/100. */
+.reputation-value {
+  font-weight: 800;
+  color: inherit;
+}
+
+.reputation-value.bad {
+  color: #ff8f8f;
+}

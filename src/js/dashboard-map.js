@@ -782,15 +782,7 @@ function escapeHtml(value) {
   }
 
   function reputationClass(value) {
-    if (value < 51) {
-      return "bad";
-    }
-
-    if (value < 75) {
-      return "warning";
-    }
-
-    return "good";
+    return value < 51 ? "bad" : "";
   }
 
   function formatPair(current, max) {
