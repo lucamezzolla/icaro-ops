@@ -15,12 +15,12 @@ $payload = read_json_body();
 
 $origin = strtoupper(trim((string)($payload['origin_airport_icao_code'] ?? '')));
 $destination = strtoupper(trim((string)($payload['destination_airport_icao_code'] ?? '')));
-$serviceType = strtoupper(trim((string)($payload['service_type'] ?? $payload['flight_type'] ?? 'ON_DEMAND')));
-$routeCategory = strtoupper(trim((string)($payload['route_category_code'] ?? '')));
+$flightType = strtoupper(trim((string)($payload['service_type'] ?? $payload['flight_type'] ?? 'ON_DEMAND')));
+$flightCategory = strtoupper(trim((string)($payload['route_category_code'] ?? $payload['flight_category_code'] ?? '')));
 $departure = trim((string)($payload['scheduled_departure_time_utc'] ?? ''));
 $ticketPrice = (float)($payload['ticket_price'] ?? $payload['base_ticket_price'] ?? 0);
 
-if (!in_array($serviceType, ['SCHEDULED', 'ON_DEMAND'], true)) {
+if (!in_array($flightType, ['SCHEDULED', 'ON_DEMAND'], true)) {
     json_response(['error' => 'INVALID_FLIGHT_TYPE'], 422);
 }
 
@@ -29,10 +29,10 @@ if (!preg_match('/^[A-Z0-9]{4}$/', $origin) || !preg_match('/^[A-Z0-9]{4}$/', $d
 }
 
 if ($origin === $destination) {
-    json_response(['error' => 'INVALID_ROUTE'], 422);
+    json_response(['error' => 'INVALID_FLIGHT'], 422);
 }
 
-if ($serviceType === 'SCHEDULED') {
+if ($flightType === 'SCHEDULED') {
     if (!preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $departure)) {
         json_response(['error' => 'INVALID_DEPARTURE_TIME'], 422);
     }
@@ -73,33 +73,42 @@ $distanceKm = haversine_km(
     (float)$destinationAirport['longitude']
 );
 
-if ($routeCategory === '') {
-    $routeCategory = determine_route_category_code($pdo, $origin, $destination, $serviceType);
+if ($flightCategory === '') {
+    $flightCategory = determine_route_category_code($pdo, $origin, $destination, $flightType);
 }
 
-$routeScope = route_scope_from_category($routeCategory);
-$routeMarket = route_market_from_category($routeCategory);
-$compatibleModels = compatible_aircraft_models_for_route($pdo, $routeCategory, $distanceKm, 1, 19);
+$routeScope = route_scope_from_category($flightCategory);
+$routeMarket = route_market_from_category($flightCategory);
+
+$compatibleModels = compatible_aircraft_models_for_route($pdo, $flightCategory, $distanceKm, 1, 19);
 
 if (!$compatibleModels) {
     json_response([
-        'error' => 'NO_COMPATIBLE_MODELS_FOR_ROUTE',
+        'error' => 'NO_COMPATIBLE_MODELS_FOR_FLIGHT',
         'message' => 'No aircraft model is compatible with this flight.',
     ], 409);
 }
 
 $preferredModel = $compatibleModels[0];
 $compatibleModelCodes = compatible_model_codes_csv($compatibleModels);
-
 $cruiseSpeed = max(1.0, (float)($preferredModel['cruise_speed_kmh'] ?? 340));
 $durationMinutes = max(20, (int)ceil(($distanceKm / $cruiseSpeed) * 60 + 15));
-$routeCode = "AR-{$origin}-{$destination}-{$routeCategory}-{$routeMarket}";
+
+/*
+ * Legacy hidden air route code: still needed internally for origin/destination.
+ * User-visible flight code is generated below as DOM-0001 / INT-0001 / etc.
+ */
+$hiddenAirRouteCode = "AR-{$origin}-{$destination}-{$flightCategory}-{$routeMarket}";
 
 try {
     $pdo->beginTransaction();
 
+    /*
+     * Reuse hidden air_route for the same origin/destination/category.
+     * This is not user-visible anymore.
+     */
     $routeStmt = $pdo->prepare("
-        SELECT id, route_public_code
+        SELECT id
         FROM air_routes
         WHERE origin_airport_icao_code = :origin
           AND destination_airport_icao_code = :destination
@@ -116,18 +125,11 @@ try {
         'route_scope' => $routeScope,
         'route_market' => $routeMarket,
     ]);
-    $airRoute = $routeStmt->fetch();
 
-    if ($airRoute) {
-        $airRouteId = (int)$airRoute['id'];
-        $routePublicCode = (string)$airRoute['route_public_code'];
-        if ($routePublicCode === '') {
-            $routePublicCode = next_route_public_code($pdo, $routeCategory);
-            $pdo->prepare("UPDATE air_routes SET route_category_code = :cat, route_public_code = :public WHERE id = :id")
-                ->execute(['cat' => $routeCategory, 'public' => $routePublicCode, 'id' => $airRouteId]);
-        }
-    } else {
-        $routePublicCode = next_route_public_code($pdo, $routeCategory);
+    $airRouteId = $routeStmt->fetchColumn();
+
+    if (!$airRouteId) {
+        $routePublicFallback = next_route_public_code($pdo, $flightCategory);
 
         $insertRoute = $pdo->prepare("
             INSERT INTO air_routes (
@@ -165,9 +167,9 @@ try {
             )
         ");
         $insertRoute->execute([
-            'route_code' => $routeCode,
-            'route_category_code' => $routeCategory,
-            'route_public_code' => $routePublicCode,
+            'route_code' => $hiddenAirRouteCode,
+            'route_category_code' => $flightCategory,
+            'route_public_code' => $routePublicFallback,
             'origin' => $origin,
             'destination' => $destination,
             'route_scope' => $routeScope,
@@ -178,59 +180,42 @@ try {
         ]);
 
         $airRouteId = (int)$pdo->lastInsertId();
+    } else {
+        $airRouteId = (int)$airRouteId;
     }
 
-    $timePart = $serviceType === 'SCHEDULED'
+    /*
+     * User-visible code for the created flight definition.
+     * Cancelled/removed flights never free their number.
+     */
+    $flightPublicCode = next_flight_public_code($pdo, $flightCategory);
+
+    /*
+     * Internal unique code. Includes epoch so recreating the same removed flight
+     * can never collide with uq_scheduled_services_code.
+     */
+    $timePart = $flightType === 'SCHEDULED'
         ? str_replace(':', '', substr((string)$departure, 0, 5))
         : 'ONDEMAND';
 
-    $serviceCode = sprintf(
-        '%s-C%03d-%s-%s',
-        $routePublicCode,
+    $internalUniqueCode = sprintf(
+        '%s-C%03d-%s-%s-%d',
+        $flightPublicCode,
         $companyId,
-        $serviceType === 'SCHEDULED' ? 'SCH' : 'OND',
-        $timePart
+        $flightType === 'SCHEDULED' ? 'SCH' : 'OND',
+        $timePart,
+        time()
     );
-
-    $existingSql = "
-        SELECT id
-        FROM scheduled_services
-        WHERE company_id = :company_id
-          AND air_route_id = :air_route_id
-          AND service_status <> 'CANCELLED'
-    ";
-
-    $existingParams = [
-        'company_id' => $companyId,
-        'air_route_id' => $airRouteId,
-    ];
-
-    if ($serviceType === 'SCHEDULED') {
-        $existingSql .= " AND scheduled_departure_time_utc = :departure";
-        $existingParams['departure'] = $departure;
-    } else {
-        $existingSql .= " AND scheduled_departure_time_utc IS NULL";
-    }
-
-    $existingSql .= " LIMIT 1";
-
-    $existingService = $pdo->prepare($existingSql);
-    $existingService->execute($existingParams);
-
-    if ($existingService->fetchColumn()) {
-        $pdo->rollBack();
-        json_response(['error' => 'FLIGHT_ALREADY_EXISTS'], 409);
-    }
 
     $columns = table_columns($pdo, 'scheduled_services');
 
     $values = [];
     put($values, $columns, 'company_id', $companyId);
     put($values, $columns, 'air_route_id', $airRouteId);
-    put($values, $columns, 'service_code', $serviceCode);
-    put($values, $columns, 'flight_route_code', $routePublicCode);
-    put($values, $columns, 'service_type', $serviceType);
-    put($values, $columns, 'recurrence_type', $serviceType === 'SCHEDULED' ? 'DAILY' : 'ON_DEMAND');
+    put($values, $columns, 'service_code', $internalUniqueCode);
+    put($values, $columns, 'flight_route_code', $flightPublicCode);
+    put($values, $columns, 'service_type', $flightType);
+    put($values, $columns, 'recurrence_type', $flightType === 'SCHEDULED' ? 'DAILY' : 'ON_DEMAND');
     put($values, $columns, 'scheduled_departure_time_utc', $departure);
     put($values, $columns, 'service_status', 'ACTIVE');
     put($values, $columns, 'preferred_aircraft_model_id', (int)$preferredModel['id']);
@@ -248,14 +233,13 @@ try {
 
     json_response([
         'status' => 'FLIGHT_CREATED',
-        'service_type' => $serviceType,
-        'route_category_code' => $routeCategory,
-        'route_public_code' => $routePublicCode,
+        'flight_code' => $flightPublicCode,
+        'internal_service_code' => $internalUniqueCode,
+        'flight_type' => $flightType,
+        'flight_category_code' => $flightCategory,
         'scheduled_departure_time_utc' => $departure,
         'air_route_id' => $airRouteId,
         'service_id' => $serviceId,
-        'route_code' => $routeCode,
-        'service_code' => $serviceCode,
         'compatible_aircraft_model_codes' => $compatibleModelCodes,
         'compatible_aircraft_icao_codes' => compatible_icao_codes_csv($compatibleModels),
     ]);
@@ -280,6 +264,7 @@ function fetch_airport(PDO $pdo, string $icao): ?array
     ");
     $stmt->execute(['icao' => $icao]);
     $row = $stmt->fetch();
+
     return $row ?: null;
 }
 
@@ -292,6 +277,7 @@ function table_columns(PDO $pdo, string $tableName): array
           AND TABLE_NAME = :table_name
     ");
     $stmt->execute(['table_name' => $tableName]);
+
     return array_flip(array_map(static fn ($row) => $row['COLUMN_NAME'], $stmt->fetchAll()));
 }
 
@@ -307,12 +293,16 @@ function insert_dynamic(PDO $pdo, string $tableName, array $values): int
     $columns = array_keys($values);
     $quoted = array_map(static fn ($column) => "`{$column}`", $columns);
     $placeholders = array_map(static fn ($column) => ":{$column}", $columns);
+
     $sql = "INSERT INTO {$tableName} (" . implode(', ', $quoted) . ") VALUES (" . implode(', ', $placeholders) . ")";
     $stmt = $pdo->prepare($sql);
+
     foreach ($values as $column => $value) {
         $stmt->bindValue(":{$column}", $value);
     }
+
     $stmt->execute();
+
     return (int)$pdo->lastInsertId();
 }
 
@@ -321,10 +311,13 @@ function haversine_km(float $lat1, float $lon1, float $lat2, float $lon2): float
     $earthRadiusKm = 6371.0;
     $dLat = deg2rad($lat2 - $lat1);
     $dLon = deg2rad($lon2 - $lon1);
+
     $a = sin($dLat / 2) ** 2
         + cos(deg2rad($lat1))
         * cos(deg2rad($lat2))
         * sin($dLon / 2) ** 2;
+
     $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+
     return $earthRadiusKm * $c;
 }

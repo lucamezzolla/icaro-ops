@@ -58,8 +58,8 @@ function renderRoutes(rows) {
   tbody.innerHTML = rows.map(service => `
     <tr>
       <td>
-        <strong>${escapeHtml(service.service_code)}</strong>
-        <div class="muted">${escapeHtml(service.route_code)}</div>
+        <strong>${escapeHtml(service.flight_route_code || service.service_code)}</strong>
+        <div class="muted">${escapeHtml(service.service_code)}</div>
       </td>
       <td>${escapeHtml(service.origin_airport_icao_code)} → ${escapeHtml(service.destination_airport_icao_code)}</td>
       <td>${serviceScheduleLabel(service)}</td>
@@ -296,7 +296,7 @@ async function openRouteDetail(serviceId) {
     content.innerHTML = `
       <div class="detail-grid">
         ${section("Air route", [
-          ["Route code", s.route_code],
+          ["Flight code", s.flight_route_code || s.route_public_code || s.route_code],
           ["Route", `${s.origin_airport_icao_code} → ${s.destination_airport_icao_code}`],
           ["Origin", `${s.origin_airport_name || "-"} (${s.origin_airport_icao_code})`],
           ["Destination", `${s.destination_airport_name || "-"} (${s.destination_airport_icao_code})`],
@@ -306,7 +306,7 @@ async function openRouteDetail(serviceId) {
           ["Estimated block", `${s.estimated_block_minutes} min`]
         ])}
         ${section("Flight", [
-          ["Service code", s.service_code],
+          ["Internal code", s.service_code],
           ["Recurrence", s.recurrence_type],
           ["Scheduled", serviceScheduleLabel(s)],
           ["Service type", s.service_type || "-"],

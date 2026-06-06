@@ -1,6 +1,16 @@
 <?php
 declare(strict_types=1);
 
+/**
+ * Centralized flight compatibility helpers.
+ *
+ * UI wording is "Flights".
+ * Some DB names are still legacy/compatibility names:
+ * - air_routes = hidden abstract origin/destination layer
+ * - scheduled_services = player-created flight definitions
+ * - scheduled_flight_instances = real operated flight instances
+ */
+
 function determine_route_category_code(PDO $pdo, string $originIcao, string $destinationIcao, string $requestedType = 'ON_DEMAND'): string
 {
     $requestedType = strtoupper(trim($requestedType));
@@ -25,7 +35,8 @@ function determine_route_category_code(PDO $pdo, string $originIcao, string $des
           oa.country_id AS origin_country_id,
           da.country_id AS destination_country_id
         FROM airports oa
-        JOIN airports da ON da.icao_code = :destination
+        JOIN airports da
+          ON da.icao_code = :destination
         WHERE oa.icao_code = :origin
         LIMIT 1
     ");
@@ -37,7 +48,9 @@ function determine_route_category_code(PDO $pdo, string $originIcao, string $des
     $row = $stmt->fetch();
 
     if ($row && $row['origin_country_id'] !== null && $row['destination_country_id'] !== null) {
-        return ((string)$row['origin_country_id'] === (string)$row['destination_country_id']) ? 'DOM' : 'INT';
+        return ((string)$row['origin_country_id'] === (string)$row['destination_country_id'])
+            ? 'DOM'
+            : 'INT';
     }
 
     return 'DOM';
@@ -71,6 +84,38 @@ function route_market_from_category(string $categoryCode): string
     };
 }
 
+/**
+ * Public code for a player-created flight definition.
+ *
+ * Examples:
+ * DOM-0001
+ * INT-0001
+ * CHT-0001
+ *
+ * Important: this is now generated from scheduled_services.flight_route_code,
+ * not from air_routes, because the UI no longer exposes "routes".
+ * Deleting/cancelling a flight does not free the old number.
+ */
+function next_flight_public_code(PDO $pdo, string $categoryCode): string
+{
+    $categoryCode = strtoupper($categoryCode);
+
+    $stmt = $pdo->prepare("
+        SELECT MAX(CAST(SUBSTRING(flight_route_code, LENGTH(:prefix) + 2) AS UNSIGNED))
+        FROM scheduled_services
+        WHERE flight_route_code LIKE :pattern
+    ");
+    $stmt->execute([
+        'prefix' => $categoryCode,
+        'pattern' => $categoryCode . '-%',
+    ]);
+
+    return sprintf('%s-%04d', $categoryCode, ((int)$stmt->fetchColumn()) + 1);
+}
+
+/**
+ * Legacy fallback for existing air_routes rows.
+ */
 function next_route_public_code(PDO $pdo, string $categoryCode): string
 {
     $categoryCode = strtoupper($categoryCode);
@@ -88,8 +133,13 @@ function next_route_public_code(PDO $pdo, string $categoryCode): string
     return sprintf('%s-%04d', $categoryCode, ((int)$stmt->fetchColumn()) + 1);
 }
 
-function compatible_aircraft_models_for_route(PDO $pdo, string $categoryCode, float $distanceKm, int $minPassengers = 1, int $maxPassengers = 19): array
-{
+function compatible_aircraft_models_for_route(
+    PDO $pdo,
+    string $categoryCode,
+    float $distanceKm,
+    int $minPassengers = 1,
+    int $maxPassengers = 19
+): array {
     $categoryCode = strtoupper($categoryCode);
 
     $allowedModelCodes = match ($categoryCode) {
@@ -124,7 +174,12 @@ function compatible_aircraft_models_for_route(PDO $pdo, string $categoryCode, fl
         ORDER BY FIELD(model_code, {$placeholders})
     ";
 
-    $params = array_merge($allowedModelCodes, [max(1.0, $distanceKm), $minPassengers, $maxPassengers], $allowedModelCodes);
+    $params = array_merge(
+        $allowedModelCodes,
+        [max(1.0, $distanceKm), $minPassengers, $maxPassengers],
+        $allowedModelCodes
+    );
+
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
 
@@ -139,10 +194,12 @@ function compatible_model_codes_csv(array $models): string
 function compatible_icao_codes_csv(array $models): string
 {
     $codes = [];
+
     foreach ($models as $model) {
         if (!empty($model['icao_type_code'])) {
             $codes[] = (string)$model['icao_type_code'];
         }
     }
+
     return implode(', ', array_values(array_unique($codes)));
 }
