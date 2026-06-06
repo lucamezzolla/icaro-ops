@@ -183,6 +183,7 @@ function openAddRouteDialog() {
     scheduledTime.value = "";
     scheduledTime.disabled = true;
     scheduledTime.required = false;
+    scheduledTime.setAttribute("disabled", "disabled");
   }
 
   document.querySelector("#ticketPrice").value = "0.00";
@@ -190,6 +191,11 @@ function openAddRouteDialog() {
   document.querySelector("#routeDialogError").hidden = true;
 
   setupServiceTypeToggle();
+
+  if (typeof setupFlightTypeExplanation === "function") {
+    setupFlightTypeExplanation();
+  }
+
   dialog.showModal();
 }
 
@@ -482,13 +488,18 @@ function setupServiceTypeToggle() {
 
   const refresh = () => {
     const isScheduled = serviceType.value === "SCHEDULED";
+
     scheduledTime.disabled = !isScheduled;
     scheduledTime.required = isScheduled;
 
-    if (!isScheduled) {
+    if (isScheduled) {
+      if (!scheduledTime.value) {
+        scheduledTime.value = "10:00";
+      }
+      scheduledTime.removeAttribute("disabled");
+    } else {
       scheduledTime.value = "";
-    } else if (!scheduledTime.value) {
-      scheduledTime.value = "10:00";
+      scheduledTime.setAttribute("disabled", "disabled");
     }
   };
 
