@@ -44,8 +44,8 @@ function find_compatible_aircraft_for_flight(
           am.range_km,
           am.cruise_speed_kmh,
           CASE
-            WHEN :preferred_model_id IS NOT NULL AND am.id = :preferred_model_id THEN 1
-            WHEN :required_model_id IS NOT NULL AND am.id = :required_model_id THEN 2
+            WHEN :preferred_model_id_check IS NOT NULL AND am.id = :preferred_model_id_match THEN 1
+            WHEN :required_model_id_check IS NOT NULL AND am.id = :required_model_id_match THEN 2
             ELSE 3
           END AS dispatch_priority
         FROM company_aircraft ca
@@ -60,8 +60,10 @@ function find_compatible_aircraft_for_flight(
     ";
 
     $params = [
-        'preferred_model_id' => $preferredModelId,
-        'required_model_id' => $requiredModelId,
+        'preferred_model_id_check' => $preferredModelId,
+        'preferred_model_id_match' => $preferredModelId,
+        'required_model_id_check' => $requiredModelId,
+        'required_model_id_match' => $requiredModelId,
         'company_id' => $companyId,
         'origin' => $originAirportIcao,
         'min_range_km' => $minRangeKm,
