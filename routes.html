@@ -16,7 +16,7 @@
 
       <section class="panel">
         <h2>Flights</h2>
-        <p class="muted">Scheduled flights are commercial offers over abstract air routes. Real flights are generated later and dispatched with compatible aircraft.</p>
+        <p class="muted">Create on-demand or scheduled flights. Real flight instances are dispatched with compatible aircraft and crew.</p>
       </section>
 
       <section class="panel">
@@ -45,7 +45,7 @@
         <div>
           <p class="eyebrow">Operations</p>
           <h1>Flights</h1>
-          <p>Manage scheduled flights separately from abstract routes and real flight instances.</p>
+          <p>Manage on-demand and scheduled flights.</p>
         </div>
         <button id="addRouteButton" type="button">Add flight</button>
       </section>
@@ -56,8 +56,8 @@
         <article class="card">
           <div class="card-header">
             <div>
-              <h2>Scheduled flights</h2>
-              <p>A flight is not a flight. Details show air route, flight policy and generated flight instances.</p>
+              <h2>Flights</h2>
+              <p>Create on-demand or scheduled flights and open details for operational rules and generated flight instances.</p>
             </div>
             <button id="refreshButton" type="button">Refresh</button>
           </div>
@@ -87,8 +87,8 @@
     <form method="dialog" class="dialog-card">
       <header class="dialog-header">
         <div>
-          <p class="eyebrow">Route</p>
-          <h2 id="routeDialogTitle">Add scheduled flight</h2>
+          <p class="eyebrow">Flight</p>
+          <h2 id="routeDialogTitle">Add flight</h2>
         </div>
         <button type="button" value="close" class="close-button" aria-label="Close">×</button>
       </header>
@@ -147,7 +147,7 @@
 
           <div class="form-actions">
             <button id="previewRouteButton" type="button">Preview economics</button>
-            <button id="saveRouteButton" type="button">Create route</button>
+            <button id="saveRouteButton" type="button">Create flight</button>
           </div>
         </div>
 
@@ -163,7 +163,7 @@
     <form method="dialog" class="dialog-card">
       <header class="dialog-header">
         <div>
-          <p class="eyebrow">Route details</p>
+          <p class="eyebrow">Flight details</p>
           <h2 id="routeDetailTitle">Scheduled flight</h2>
         </div>
         <button type="button" value="close" class="close-button" aria-label="Close">×</button>
