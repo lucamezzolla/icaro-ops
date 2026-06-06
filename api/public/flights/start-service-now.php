@@ -1,6 +1,26 @@
 <?php
 declare(strict_types=1);
 
+ini_set('display_errors', '1');
+ini_set('display_startup_errors', '1');
+error_reporting(E_ALL);
+
+set_exception_handler(function (Throwable $exception): void {
+    http_response_code(500);
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode([
+        'error' => 'UNCAUGHT_EXCEPTION',
+        'message' => $exception->getMessage(),
+        'file' => $exception->getFile(),
+        'line' => $exception->getLine(),
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    exit;
+});
+
+set_error_handler(function (int $severity, string $message, string $file, int $line): bool {
+    throw new ErrorException($message, 0, $severity, $file, $line);
+});
+
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
 require_once __DIR__ . '/../../lib/dispatch-aircraft.php';
@@ -235,9 +255,30 @@ function insert_dynamic(PDO $pdo, string $tableName, array $values): int {
     return (int)$pdo->lastInsertId();
 }
 function next_flight_code(PDO $pdo, int $companyId): string {
-    $date = gmdate('Ymd');
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM scheduled_flight_instances WHERE company_id = :company_id AND flight_code LIKE :pattern");
-    $stmt->execute(['company_id' => $companyId, 'pattern' => "IO%-{$date}"]);
-    return sprintf('IO%03d-%s', ((int)$stmt->fetchColumn()) + 1, $date);
+    $base = time();
+    $code = 'IO-' . $base;
+
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM scheduled_flight_instances
+        WHERE company_id = :company_id
+          AND flight_code = :flight_code
+    ");
+
+    $suffix = 0;
+
+    while (true) {
+        $candidate = $suffix === 0 ? $code : $code . '-' . $suffix;
+        $stmt->execute([
+            'company_id' => $companyId,
+            'flight_code' => $candidate,
+        ]);
+
+        if ((int)$stmt->fetchColumn() === 0) {
+            return $candidate;
+        }
+
+        $suffix++;
+    }
 }
 function money(float $v): string { return number_format($v, 2, '.', ''); }

@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#saveRouteButton")?.addEventListener("click", saveRoute);
   setupTicketSuggestion();
   setupServiceTypeToggle();
+  setupFlightTypeExplanation();
   setupDialogCloseButtons();
   await loadRoutes();
 });
@@ -234,6 +235,7 @@ function routeFormPayload() {
   return {
     service_type: serviceType,
     flight_type: serviceType,
+    route_category_code: document.querySelector("#routeCategory")?.value || "",
     origin_airport_icao_code: document.querySelector("#originAirport").value.trim().toUpperCase(),
     destination_airport_icao_code: document.querySelector("#destinationAirport").value.trim().toUpperCase(),
     scheduled_departure_time_utc: scheduledTime,
@@ -423,6 +425,32 @@ async function removeService(serviceId) {
   } catch (error) {
     alert(error.message || "Unable to remove flight.");
   }
+}
+
+
+
+function setupFlightTypeExplanation() {
+  const serviceType = document.querySelector("#serviceType");
+  const explanation = document.querySelector("#flightTypeExplanation");
+
+  if (!serviceType || !explanation) {
+    return;
+  }
+
+  const refresh = () => {
+    if (serviceType.value === "SCHEDULED") {
+      explanation.textContent = "Scheduled flight: recurring planned flight with a fixed UTC departure time. The aircraft must be available at the origin airport when departure time arrives.";
+    } else {
+      explanation.textContent = "On-demand flight: manual non-scheduled flight that can be started when compatible aircraft and crew are available. Useful for extra income, but it may interfere with later scheduled flights.";
+    }
+  };
+
+  if (!serviceType.dataset.explanationBound) {
+    serviceType.dataset.explanationBound = "true";
+    serviceType.addEventListener("change", refresh);
+  }
+
+  refresh();
 }
 
 

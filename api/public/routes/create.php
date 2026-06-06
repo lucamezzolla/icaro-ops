@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
+require_once __DIR__ . '/../../lib/flight-route-compatibility.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['error' => 'METHOD_NOT_ALLOWED'], 405);
@@ -15,6 +16,7 @@ $payload = read_json_body();
 $origin = strtoupper(trim((string)($payload['origin_airport_icao_code'] ?? '')));
 $destination = strtoupper(trim((string)($payload['destination_airport_icao_code'] ?? '')));
 $serviceType = strtoupper(trim((string)($payload['service_type'] ?? $payload['flight_type'] ?? 'ON_DEMAND')));
+$routeCategory = strtoupper(trim((string)($payload['route_category_code'] ?? '')));
 $departure = trim((string)($payload['scheduled_departure_time_utc'] ?? ''));
 $ticketPrice = (float)($payload['ticket_price'] ?? $payload['base_ticket_price'] ?? 0);
 
@@ -39,11 +41,6 @@ if ($serviceType === 'SCHEDULED') {
         $departure .= ':00';
     }
 } else {
-    /*
-     * Critical rule:
-     * ON_DEMAND flights/routes must never be interpreted as scheduled,
-     * even if the UI accidentally sends a stale time value such as 10:00.
-     */
     $departure = null;
 }
 
@@ -65,25 +62,9 @@ if (
     json_response(['error' => 'AIRPORT_COORDINATES_MISSING'], 409);
 }
 
-$companyStmt = $pdo->prepare("
-    SELECT currency_code
-    FROM companies
-    WHERE id = :company_id
-    LIMIT 1
-");
+$companyStmt = $pdo->prepare("SELECT currency_code FROM companies WHERE id = :company_id LIMIT 1");
 $companyStmt->execute(['company_id' => $companyId]);
 $company = $companyStmt->fetch() ?: ['currency_code' => 'EUR'];
-
-$modelStmt = $pdo->prepare("
-    SELECT id, cruise_speed_kmh
-    FROM aircraft_models
-    WHERE model_code = 'C208B_GRAND_CARAVAN_EX'
-    LIMIT 1
-");
-$modelStmt->execute();
-$preferredModel = $modelStmt->fetch();
-
-$compatibleModelCodes = 'C208B_GRAND_CARAVAN_EX,PC12_NGX,DHC6_TWIN_OTTER_400,L410_NG';
 
 $distanceKm = haversine_km(
     (float)$originAirport['latitude'],
@@ -92,26 +73,38 @@ $distanceKm = haversine_km(
     (float)$destinationAirport['longitude']
 );
 
+if ($routeCategory === '') {
+    $routeCategory = determine_route_category_code($pdo, $origin, $destination, $serviceType);
+}
+
+$routeScope = route_scope_from_category($routeCategory);
+$routeMarket = route_market_from_category($routeCategory);
+$compatibleModels = compatible_aircraft_models_for_route($pdo, $routeCategory, $distanceKm, 1, 19);
+
+if (!$compatibleModels) {
+    json_response([
+        'error' => 'NO_COMPATIBLE_MODELS_FOR_ROUTE',
+        'message' => 'No aircraft model is compatible with this flight.',
+    ], 409);
+}
+
+$preferredModel = $compatibleModels[0];
+$compatibleModelCodes = compatible_model_codes_csv($compatibleModels);
+
 $cruiseSpeed = max(1.0, (float)($preferredModel['cruise_speed_kmh'] ?? 340));
 $durationMinutes = max(20, (int)ceil(($distanceKm / $cruiseSpeed) * 60 + 15));
-
-$routeScope = ((string)($originAirport['country_id'] ?? '') === (string)($destinationAirport['country_id'] ?? ''))
-    ? 'DOMESTIC'
-    : 'INTERNATIONAL';
-
-$routeScopeCode = $routeScope === 'DOMESTIC' ? 'DOM' : 'INT';
-$routeCode = "AR-{$origin}-{$destination}-{$routeScopeCode}-PAX";
+$routeCode = "AR-{$origin}-{$destination}-{$routeCategory}-{$routeMarket}";
 
 try {
     $pdo->beginTransaction();
 
     $routeStmt = $pdo->prepare("
-        SELECT id
+        SELECT id, route_public_code
         FROM air_routes
         WHERE origin_airport_icao_code = :origin
           AND destination_airport_icao_code = :destination
           AND route_scope = :route_scope
-          AND route_market = 'PAX'
+          AND route_market = :route_market
           AND route_operation_domain = 'CIVIL'
           AND required_aircraft_class = 'LIGHT_COMMERCIAL'
         LIMIT 1
@@ -121,13 +114,26 @@ try {
         'origin' => $origin,
         'destination' => $destination,
         'route_scope' => $routeScope,
+        'route_market' => $routeMarket,
     ]);
-    $airRouteId = $routeStmt->fetchColumn();
+    $airRoute = $routeStmt->fetch();
 
-    if (!$airRouteId) {
+    if ($airRoute) {
+        $airRouteId = (int)$airRoute['id'];
+        $routePublicCode = (string)$airRoute['route_public_code'];
+        if ($routePublicCode === '') {
+            $routePublicCode = next_route_public_code($pdo, $routeCategory);
+            $pdo->prepare("UPDATE air_routes SET route_category_code = :cat, route_public_code = :public WHERE id = :id")
+                ->execute(['cat' => $routeCategory, 'public' => $routePublicCode, 'id' => $airRouteId]);
+        }
+    } else {
+        $routePublicCode = next_route_public_code($pdo, $routeCategory);
+
         $insertRoute = $pdo->prepare("
             INSERT INTO air_routes (
               route_code,
+              route_category_code,
+              route_public_code,
               origin_airport_icao_code,
               destination_airport_icao_code,
               route_scope,
@@ -142,10 +148,12 @@ try {
               status
             ) VALUES (
               :route_code,
+              :route_category_code,
+              :route_public_code,
               :origin,
               :destination,
               :route_scope,
-              'PAX',
+              :route_market,
               'CIVIL',
               'LIGHT_COMMERCIAL',
               1,
@@ -158,9 +166,12 @@ try {
         ");
         $insertRoute->execute([
             'route_code' => $routeCode,
+            'route_category_code' => $routeCategory,
+            'route_public_code' => $routePublicCode,
             'origin' => $origin,
             'destination' => $destination,
             'route_scope' => $routeScope,
+            'route_market' => $routeMarket,
             'min_range_km' => number_format($distanceKm, 2, '.', ''),
             'planned_distance_km' => number_format($distanceKm, 2, '.', ''),
             'estimated_block_minutes' => $durationMinutes,
@@ -174,10 +185,10 @@ try {
         : 'ONDEMAND';
 
     $serviceCode = sprintf(
-        'FL-C%03d-%s-%s-%s',
+        '%s-C%03d-%s-%s',
+        $routePublicCode,
         $companyId,
-        $origin,
-        $destination,
+        $serviceType === 'SCHEDULED' ? 'SCH' : 'OND',
         $timePart
     );
 
@@ -208,20 +219,21 @@ try {
 
     if ($existingService->fetchColumn()) {
         $pdo->rollBack();
-        json_response(['error' => 'FLIGHT_ROUTE_ALREADY_EXISTS'], 409);
+        json_response(['error' => 'FLIGHT_ALREADY_EXISTS'], 409);
     }
 
     $columns = table_columns($pdo, 'scheduled_services');
 
     $values = [];
     put($values, $columns, 'company_id', $companyId);
-    put($values, $columns, 'air_route_id', (int)$airRouteId);
+    put($values, $columns, 'air_route_id', $airRouteId);
     put($values, $columns, 'service_code', $serviceCode);
+    put($values, $columns, 'flight_route_code', $routePublicCode);
     put($values, $columns, 'service_type', $serviceType);
     put($values, $columns, 'recurrence_type', $serviceType === 'SCHEDULED' ? 'DAILY' : 'ON_DEMAND');
     put($values, $columns, 'scheduled_departure_time_utc', $departure);
     put($values, $columns, 'service_status', 'ACTIVE');
-    put($values, $columns, 'preferred_aircraft_model_id', $preferredModel['id'] ?? null);
+    put($values, $columns, 'preferred_aircraft_model_id', (int)$preferredModel['id']);
     put($values, $columns, 'compatible_aircraft_model_codes', $compatibleModelCodes);
     put($values, $columns, 'required_aircraft_class', 'LIGHT_COMMERCIAL');
     put($values, $columns, 'base_ticket_price', number_format($ticketPrice, 2, '.', ''));
@@ -235,17 +247,17 @@ try {
     $pdo->commit();
 
     json_response([
-        'status' => 'FLIGHT_ROUTE_CREATED',
-        'message' => $serviceType === 'SCHEDULED'
-            ? 'Scheduled flight route created over an abstract air route.'
-            : 'On-demand flight route created over an abstract air route.',
+        'status' => 'FLIGHT_CREATED',
         'service_type' => $serviceType,
+        'route_category_code' => $routeCategory,
+        'route_public_code' => $routePublicCode,
         'scheduled_departure_time_utc' => $departure,
-        'air_route_id' => (int)$airRouteId,
+        'air_route_id' => $airRouteId,
         'service_id' => $serviceId,
         'route_code' => $routeCode,
         'service_code' => $serviceCode,
         'compatible_aircraft_model_codes' => $compatibleModelCodes,
+        'compatible_aircraft_icao_codes' => compatible_icao_codes_csv($compatibleModels),
     ]);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) {
@@ -253,8 +265,8 @@ try {
     }
 
     json_response([
-        'error' => 'FLIGHT_ROUTE_CREATE_FAILED',
-        'message' => 'Unable to create flight route.',
+        'error' => 'FLIGHT_CREATE_FAILED',
+        'message' => $exception->getMessage(),
     ], 500);
 }
 
@@ -268,7 +280,6 @@ function fetch_airport(PDO $pdo, string $icao): ?array
     ");
     $stmt->execute(['icao' => $icao]);
     $row = $stmt->fetch();
-
     return $row ?: null;
 }
 
@@ -281,7 +292,6 @@ function table_columns(PDO $pdo, string $tableName): array
           AND TABLE_NAME = :table_name
     ");
     $stmt->execute(['table_name' => $tableName]);
-
     return array_flip(array_map(static fn ($row) => $row['COLUMN_NAME'], $stmt->fetchAll()));
 }
 
@@ -297,16 +307,12 @@ function insert_dynamic(PDO $pdo, string $tableName, array $values): int
     $columns = array_keys($values);
     $quoted = array_map(static fn ($column) => "`{$column}`", $columns);
     $placeholders = array_map(static fn ($column) => ":{$column}", $columns);
-
     $sql = "INSERT INTO {$tableName} (" . implode(', ', $quoted) . ") VALUES (" . implode(', ', $placeholders) . ")";
     $stmt = $pdo->prepare($sql);
-
     foreach ($values as $column => $value) {
         $stmt->bindValue(":{$column}", $value);
     }
-
     $stmt->execute();
-
     return (int)$pdo->lastInsertId();
 }
 
@@ -315,13 +321,10 @@ function haversine_km(float $lat1, float $lon1, float $lat2, float $lon2): float
     $earthRadiusKm = 6371.0;
     $dLat = deg2rad($lat2 - $lat1);
     $dLon = deg2rad($lon2 - $lon1);
-
     $a = sin($dLat / 2) ** 2
         + cos(deg2rad($lat1))
         * cos(deg2rad($lat2))
         * sin($dLon / 2) ** 2;
-
     $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
-
     return $earthRadiusKm * $c;
 }
