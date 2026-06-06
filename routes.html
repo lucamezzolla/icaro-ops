@@ -21,7 +21,7 @@
 
       <section class="panel">
         <dl id="routesSummary" class="summary-list">
-          <div><dt>Routes</dt><dd>Loading...</dd></div>
+          <div><dt>Services</dt><dd>Loading...</dd></div>
         </dl>
       </section>
     </aside>
@@ -32,7 +32,7 @@
           <a href="index.html">Map</a>
           <a href="fleet.html">Fleet</a>
           <a href="staff.html">Staff</a>
-          <a href="routes.html" class="active">Routes</a>
+          <a href="routes.html" class="active">Services</a>
           <a href="flight-log.html">Flight Log</a>
           <a href="mailbox.html">Mailbox</a>
           <a href="#">Finance</a>
@@ -67,12 +67,12 @@
               <thead>
                 <tr>
                   <th>Service / Air route</th>
-                  <th>Departure UTC</th>
-                  <th>Required class</th>
-                  <th>Preferred model</th>
-                  <th>Status</th>
-                  <th>Ticket</th>
-                  <th>Status</th>
+                  <th>Scheduled</th>
+                  <th>Airplanes</th>
+                  <th>Airplanes</th>
+                  
+                  
+                  
                   <th></th>
                 </tr>
               </thead>
@@ -108,6 +108,14 @@
           <label>
             Destination ICAO
             <input id="destinationAirport" name="destination_airport_icao_code" maxlength="4" required placeholder="LIPZ">
+          </label>
+
+          <label>
+            Service type
+            <select id="serviceType" name="service_type">
+              <option value="SCHEDULED" selected>Scheduled</option>
+              <option value="ON_DEMAND">On demand / non-scheduled</option>
+            </select>
           </label>
 
           <label>

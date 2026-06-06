@@ -9,15 +9,21 @@ $companyId = (int)$session['company_id'];
 
 $pdo = db();
 
-/*
- * Routes page now lists scheduled services over abstract air_routes.
- * A service is NOT a flight. Flights are generated/started later.
- */
+$columns = table_columns($pdo, 'scheduled_services');
+$serviceTypeExpr = isset($columns['service_type'])
+    ? "ss.service_type"
+    : "CASE WHEN ss.scheduled_departure_time_utc IS NULL THEN 'ON_DEMAND' ELSE 'SCHEDULED' END AS service_type";
+
+$compatibleModelsExpr = isset($columns['compatible_aircraft_model_codes'])
+    ? "ss.compatible_aircraft_model_codes"
+    : "'C208B_GRAND_CARAVAN_EX,PC12_NGX,DHC6_TWIN_OTTER_400,L410_NG' AS compatible_aircraft_model_codes";
+
 $stmt = $pdo->prepare("
     SELECT
       ss.id AS service_id,
       ss.id AS route_id,
       ss.service_code,
+      {$serviceTypeExpr},
       ss.company_id,
       ss.air_route_id,
       ss.recurrence_type,
@@ -25,6 +31,7 @@ $stmt = $pdo->prepare("
       ss.service_status AS status,
       ss.required_aircraft_class,
       ss.preferred_aircraft_model_id,
+      {$compatibleModelsExpr},
       ss.base_ticket_price AS ticket_price,
       ss.currency_code,
       ss.auto_dispatch_enabled,
@@ -72,8 +79,70 @@ $stmt = $pdo->prepare("
     LEFT JOIN aircraft_models am
       ON am.id = ss.preferred_aircraft_model_id
     WHERE ss.company_id = :company_id
-    ORDER BY ss.scheduled_departure_time_utc, ar.origin_airport_icao_code, ar.destination_airport_icao_code
+    ORDER BY
+      CASE
+        WHEN ss.scheduled_departure_time_utc IS NULL THEN '99:99:99'
+        ELSE ss.scheduled_departure_time_utc
+      END,
+      ar.origin_airport_icao_code,
+      ar.destination_airport_icao_code
 ");
 $stmt->execute(['company_id' => $companyId]);
 
-json_response($stmt->fetchAll());
+$rows = $stmt->fetchAll();
+
+foreach ($rows as &$row) {
+    $row['compatible_aircraft_icao_codes'] = compatible_icao_codes(
+        $pdo,
+        (string)($row['compatible_aircraft_model_codes'] ?? '')
+    );
+}
+unset($row);
+
+json_response($rows);
+
+function compatible_icao_codes(PDO $pdo, string $modelCodesCsv): string
+{
+    $modelCodes = array_values(array_filter(array_map(
+        static fn (string $value): string => trim($value),
+        explode(',', $modelCodesCsv)
+    )));
+
+    if (!$modelCodes) {
+        return 'C208';
+    }
+
+    $placeholders = implode(',', array_fill(0, count($modelCodes), '?'));
+
+    $stmt = $pdo->prepare("
+        SELECT model_code, icao_type_code
+        FROM aircraft_models
+        WHERE model_code IN ({$placeholders})
+        ORDER BY FIELD(model_code, {$placeholders})
+    ");
+
+    $params = array_merge($modelCodes, $modelCodes);
+    $stmt->execute($params);
+
+    $codes = [];
+    foreach ($stmt->fetchAll() as $row) {
+        if (!empty($row['icao_type_code'])) {
+            $codes[] = $row['icao_type_code'];
+        }
+    }
+
+    return implode(', ', array_values(array_unique($codes)));
+}
+
+function table_columns(PDO $pdo, string $tableName): array
+{
+    $stmt = $pdo->prepare("
+        SELECT COLUMN_NAME
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :table_name
+    ");
+    $stmt->execute(['table_name' => $tableName]);
+
+    return array_flip(array_map(static fn ($row) => $row['COLUMN_NAME'], $stmt->fetchAll()));
+}

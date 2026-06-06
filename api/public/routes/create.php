@@ -14,8 +14,13 @@ $payload = read_json_body();
 
 $origin = strtoupper(trim((string)($payload['origin_airport_icao_code'] ?? '')));
 $destination = strtoupper(trim((string)($payload['destination_airport_icao_code'] ?? '')));
+$serviceType = strtoupper(trim((string)($payload['service_type'] ?? 'SCHEDULED')));
 $departure = trim((string)($payload['scheduled_departure_time_utc'] ?? ''));
 $ticketPrice = (float)($payload['ticket_price'] ?? $payload['base_ticket_price'] ?? 0);
+
+if (!in_array($serviceType, ['SCHEDULED', 'ON_DEMAND'], true)) {
+    json_response(['error' => 'INVALID_SERVICE_TYPE'], 422);
+}
 
 if (!preg_match('/^[A-Z0-9]{4}$/', $origin) || !preg_match('/^[A-Z0-9]{4}$/', $destination)) {
     json_response(['error' => 'INVALID_AIRPORT_CODE'], 422);
@@ -25,12 +30,16 @@ if ($origin === $destination) {
     json_response(['error' => 'INVALID_ROUTE'], 422);
 }
 
-if (!preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $departure)) {
-    json_response(['error' => 'INVALID_DEPARTURE_TIME'], 422);
-}
+if ($serviceType === 'SCHEDULED') {
+    if (!preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $departure)) {
+        json_response(['error' => 'INVALID_DEPARTURE_TIME'], 422);
+    }
 
-if (strlen($departure) === 5) {
-    $departure .= ':00';
+    if (strlen($departure) === 5) {
+        $departure .= ':00';
+    }
+} else {
+    $departure = null;
 }
 
 $pdo = db();
@@ -68,6 +77,8 @@ $modelStmt = $pdo->prepare("
 ");
 $modelStmt->execute();
 $preferredModel = $modelStmt->fetch();
+
+$compatibleModelCodes = 'C208B_GRAND_CARAVAN_EX,PC12_NGX,DHC6_TWIN_OTTER_400,L410_NG';
 
 $distanceKm = haversine_km(
     (float)$originAirport['latitude'],
@@ -153,86 +164,82 @@ try {
         $airRouteId = (int)$pdo->lastInsertId();
     }
 
+    $timePart = $serviceType === 'SCHEDULED'
+        ? str_replace(':', '', substr((string)$departure, 0, 5))
+        : 'ONDEMAND';
+
     $serviceCode = sprintf(
         'SV-C%03d-%s-%s-%s',
         $companyId,
         $origin,
         $destination,
-        str_replace(':', '', substr($departure, 0, 5))
+        $timePart
     );
 
-    $existingService = $pdo->prepare("
+    $existingSql = "
         SELECT id
         FROM scheduled_services
         WHERE company_id = :company_id
           AND air_route_id = :air_route_id
-          AND scheduled_departure_time_utc = :departure
           AND service_status <> 'CANCELLED'
-        LIMIT 1
-    ");
-    $existingService->execute([
+    ";
+
+    $existingParams = [
         'company_id' => $companyId,
         'air_route_id' => $airRouteId,
-        'departure' => $departure,
-    ]);
+    ];
+
+    if ($serviceType === 'SCHEDULED') {
+        $existingSql .= " AND scheduled_departure_time_utc = :departure";
+        $existingParams['departure'] = $departure;
+    } else {
+        $existingSql .= " AND scheduled_departure_time_utc IS NULL";
+    }
+
+    $existingSql .= " LIMIT 1";
+
+    $existingService = $pdo->prepare($existingSql);
+    $existingService->execute($existingParams);
 
     if ($existingService->fetchColumn()) {
         $pdo->rollBack();
         json_response(['error' => 'SERVICE_ALREADY_EXISTS'], 409);
     }
 
-    $insertService = $pdo->prepare("
-        INSERT INTO scheduled_services (
-          company_id,
-          air_route_id,
-          service_code,
-          recurrence_type,
-          scheduled_departure_time_utc,
-          service_status,
-          preferred_aircraft_model_id,
-          required_aircraft_class,
-          base_ticket_price,
-          currency_code,
-          auto_dispatch_enabled,
-          allow_backup_aircraft,
-          allow_extra_flights
-        ) VALUES (
-          :company_id,
-          :air_route_id,
-          :service_code,
-          'DAILY',
-          :departure,
-          'ACTIVE',
-          :preferred_aircraft_model_id,
-          'LIGHT_COMMERCIAL',
-          :base_ticket_price,
-          :currency_code,
-          1,
-          1,
-          1
-        )
-    ");
-    $insertService->execute([
-        'company_id' => $companyId,
-        'air_route_id' => $airRouteId,
-        'service_code' => $serviceCode,
-        'departure' => $departure,
-        'preferred_aircraft_model_id' => $preferredModel['id'] ?? null,
-        'base_ticket_price' => number_format($ticketPrice, 2, '.', ''),
-        'currency_code' => $company['currency_code'] ?? 'EUR',
-    ]);
+    $columns = table_columns($pdo, 'scheduled_services');
 
-    $serviceId = (int)$pdo->lastInsertId();
+    $values = [];
+    put($values, $columns, 'company_id', $companyId);
+    put($values, $columns, 'air_route_id', (int)$airRouteId);
+    put($values, $columns, 'service_code', $serviceCode);
+    put($values, $columns, 'service_type', $serviceType);
+    put($values, $columns, 'recurrence_type', $serviceType === 'SCHEDULED' ? 'DAILY' : 'ON_DEMAND');
+    put($values, $columns, 'scheduled_departure_time_utc', $departure);
+    put($values, $columns, 'service_status', 'ACTIVE');
+    put($values, $columns, 'preferred_aircraft_model_id', $preferredModel['id'] ?? null);
+    put($values, $columns, 'compatible_aircraft_model_codes', $compatibleModelCodes);
+    put($values, $columns, 'required_aircraft_class', 'LIGHT_COMMERCIAL');
+    put($values, $columns, 'base_ticket_price', number_format($ticketPrice, 2, '.', ''));
+    put($values, $columns, 'currency_code', $company['currency_code'] ?? 'EUR');
+    put($values, $columns, 'auto_dispatch_enabled', 1);
+    put($values, $columns, 'allow_backup_aircraft', 1);
+    put($values, $columns, 'allow_extra_flights', 1);
+
+    $serviceId = insert_dynamic($pdo, 'scheduled_services', $values);
 
     $pdo->commit();
 
     json_response([
         'status' => 'SERVICE_CREATED',
-        'message' => 'Scheduled service created over an abstract air route.',
+        'message' => $serviceType === 'SCHEDULED'
+            ? 'Scheduled service created over an abstract air route.'
+            : 'On-demand service created over an abstract air route.',
+        'service_type' => $serviceType,
         'air_route_id' => (int)$airRouteId,
         'service_id' => $serviceId,
         'route_code' => $routeCode,
         'service_code' => $serviceCode,
+        'compatible_aircraft_model_codes' => $compatibleModelCodes,
     ]);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) {
@@ -241,7 +248,7 @@ try {
 
     json_response([
         'error' => 'SERVICE_CREATE_FAILED',
-        'message' => 'Unable to create scheduled service.',
+        'message' => 'Unable to create service.',
     ], 500);
 }
 
@@ -257,6 +264,44 @@ function fetch_airport(PDO $pdo, string $icao): ?array
     $row = $stmt->fetch();
 
     return $row ?: null;
+}
+
+function table_columns(PDO $pdo, string $tableName): array
+{
+    $stmt = $pdo->prepare("
+        SELECT COLUMN_NAME
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :table_name
+    ");
+    $stmt->execute(['table_name' => $tableName]);
+
+    return array_flip(array_map(static fn ($row) => $row['COLUMN_NAME'], $stmt->fetchAll()));
+}
+
+function put(array &$values, array $columns, string $column, mixed $value): void
+{
+    if (isset($columns[$column])) {
+        $values[$column] = $value;
+    }
+}
+
+function insert_dynamic(PDO $pdo, string $tableName, array $values): int
+{
+    $columns = array_keys($values);
+    $quoted = array_map(static fn ($column) => "`{$column}`", $columns);
+    $placeholders = array_map(static fn ($column) => ":{$column}", $columns);
+
+    $sql = "INSERT INTO {$tableName} (" . implode(', ', $quoted) . ") VALUES (" . implode(', ', $placeholders) . ")";
+    $stmt = $pdo->prepare($sql);
+
+    foreach ($values as $column => $value) {
+        $stmt->bindValue(":{$column}", $value);
+    }
+
+    $stmt->execute();
+
+    return (int)$pdo->lastInsertId();
 }
 
 function haversine_km(float $lat1, float $lon1, float $lat2, float $lon2): float

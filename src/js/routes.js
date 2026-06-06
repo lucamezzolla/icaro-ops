@@ -2,7 +2,8 @@ const API = {
   routes: "api/public/routes/list.php",
   create: "api/public/routes/create.php",
   detail: id => `api/public/routes/detail.php?serviceId=${encodeURIComponent(id)}`,
-  preview: "api/public/routes/preview.php"
+  preview: "api/public/routes/preview.php",
+  startServiceFlight: "api/public/flights/start-service-now.php"
 };
 
 let services = [];
@@ -15,6 +16,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#previewRouteButton")?.addEventListener("click", previewRoute);
   document.querySelector("#saveRouteButton")?.addEventListener("click", saveRoute);
   setupTicketSuggestion();
+  setupServiceTypeToggle();
   await loadRoutes();
 });
 
@@ -45,7 +47,7 @@ function renderRoutes(rows) {
   const tbody = document.querySelector("#routesTableBody");
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="8">No scheduled services yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6">No scheduled services yet.</td></tr>`;
     return;
   }
 
@@ -56,14 +58,13 @@ function renderRoutes(rows) {
         <div class="muted">${escapeHtml(service.route_code)}</div>
       </td>
       <td>${escapeHtml(service.origin_airport_icao_code)} → ${escapeHtml(service.destination_airport_icao_code)}</td>
-      <td>${escapeHtml(service.scheduled_departure_time_utc || "-")}</td>
-      <td>${escapeHtml(service.required_aircraft_class || "-")}</td>
-      <td>${escapeHtml(service.manufacturer || "")} ${escapeHtml(service.model_name || "")}</td>
+      <td>${serviceScheduleLabel(service)}</td>
+      <td>${modelCodesLabel(service)}</td>
       <td>${money(service.ticket_price)} ${escapeHtml(service.currency_code || "")}</td>
-      <td><span class="badge ${service.status === "ACTIVE" ? "good" : "warn"}">${escapeHtml(service.status || "-")}</span></td>
       <td>
         <div class="button-row">
           <button type="button" data-service-detail="${service.service_id}">Details</button>
+          <button type="button" data-start-service="${service.service_id}" class="secondary">Start flight now</button>
         </div>
       </td>
     </tr>
@@ -72,7 +73,56 @@ function renderRoutes(rows) {
   tbody.querySelectorAll("[data-service-detail]").forEach(button => {
     button.addEventListener("click", () => openRouteDetail(Number(button.dataset.serviceDetail)));
   });
+
+  tbody.querySelectorAll("[data-start-service]").forEach(button => {
+    button.addEventListener("click", () => startServiceFlight(Number(button.dataset.startService)));
+  });
 }
+
+
+async function startServiceFlight(serviceId) {
+  hideError();
+
+  if (!confirm("Create and start a real flight instance for this scheduled service now?")) {
+    return;
+  }
+
+  try {
+    const result = await postJson(API.startServiceFlight, { service_id: serviceId });
+
+    alert(
+      `Flight ${result.flight_code} is now in flight.\n` +
+      `Aircraft: ${result.aircraft?.registration_code || "-"}\n` +
+      `Crew: ${result.crew?.pilot_1 || "-"} / ${result.crew?.pilot_2 || "-"}\n` +
+      `Estimated profit: ${result.estimated_profit || "0.00"}`
+    );
+
+    await loadRoutes();
+  } catch (error) {
+    showError(error.message || "Unable to start service flight.");
+  }
+}
+
+
+
+function serviceScheduleLabel(service) {
+  const type = service.service_type || (service.scheduled_departure_time_utc ? "SCHEDULED" : "ON_DEMAND");
+
+  if (type === "ON_DEMAND") {
+    return "On demand";
+  }
+
+  return service.scheduled_departure_time_utc || "-";
+}
+
+function modelCodesLabel(service) {
+  return escapeHtml(
+    service.compatible_aircraft_icao_codes || service.compatible_aircraft_icao_codes || service.compatible_aircraft_model_codes ||
+    service.model_code ||
+    "C208B_GRAND_CARAVAN_EX"
+  );
+}
+
 
 function openAddRouteDialog() {
   const dialog = document.querySelector("#routeDialog");
@@ -84,7 +134,11 @@ function openAddRouteDialog() {
 
   document.querySelector("#originAirport").value = "";
   document.querySelector("#destinationAirport").value = "";
+  if (document.querySelector("#serviceType")) {
+    document.querySelector("#serviceType").value = "SCHEDULED";
+  }
   document.querySelector("#scheduledTime").value = "10:00";
+  document.querySelector("#scheduledTime").disabled = false;
   document.querySelector("#ticketPrice").value = "0.00";
   document.querySelector("#routePreviewPanel").hidden = true;
   document.querySelector("#routeDialogError").hidden = true;
@@ -147,6 +201,7 @@ function routeFormPayload() {
   return {
     origin_airport_icao_code: document.querySelector("#originAirport").value.trim().toUpperCase(),
     destination_airport_icao_code: document.querySelector("#destinationAirport").value.trim().toUpperCase(),
+    service_type: document.querySelector("#serviceType")?.value || "SCHEDULED",
     scheduled_departure_time_utc: document.querySelector("#scheduledTime").value,
     ticket_price: Number(document.querySelector("#ticketPrice").value)
   };
@@ -165,7 +220,7 @@ function renderPreview(p) {
       ${section("Scheduled service", [
         ["Service type", "Daily scheduled passenger service"],
         ["Required aircraft class", "LIGHT_COMMERCIAL"],
-        ["Preferred model", `${p.aircraft.manufacturer} ${p.aircraft.model_name}`],
+        ["Airplanes", `${p.aircraft.manufacturer} ${p.aircraft.model_name}`],
         ["Ticket", `${money(p.ticket_price)} ${p.currency_code}`],
         ["Suggested ticket", `${money(p.suggested_ticket_price || 0)} ${p.currency_code}`]
       ])}
@@ -217,10 +272,10 @@ async function openRouteDetail(serviceId) {
         ${section("Scheduled service", [
           ["Service code", s.service_code],
           ["Recurrence", s.recurrence_type],
-          ["Departure UTC", s.scheduled_departure_time_utc],
-          ["Status", s.service_status],
-          ["Required aircraft class", s.required_aircraft_class],
-          ["Preferred model", `${s.manufacturer || "-"} ${s.model_name || ""}`],
+          ["Scheduled", serviceScheduleLabel(s)],
+          ["Service type", s.service_type || "-"],
+          ["Compatible models", s.compatible_aircraft_icao_codes || s.compatible_aircraft_model_codes || s.icao_type_code || s.model_code || "-"],
+          ["Airplanes", `${s.manufacturer || "-"} ${s.model_name || ""}`],
           ["Base ticket", `${money(s.base_ticket_price)} ${s.currency_code}`]
         ])}
         ${section("Dispatch policy", [
@@ -245,6 +300,34 @@ async function openRouteDetail(serviceId) {
     content.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load service detail.")}</div>`;
   }
 }
+
+
+function setupServiceTypeToggle() {
+  const serviceType = document.querySelector("#serviceType");
+  const scheduledTime = document.querySelector("#scheduledTime");
+
+  if (!serviceType || !scheduledTime || serviceType.dataset.bound) {
+    return;
+  }
+
+  serviceType.dataset.bound = "true";
+
+  const refresh = () => {
+    const isScheduled = serviceType.value === "SCHEDULED";
+    scheduledTime.disabled = !isScheduled;
+    scheduledTime.required = isScheduled;
+
+    if (!isScheduled) {
+      scheduledTime.value = "";
+    } else if (!scheduledTime.value) {
+      scheduledTime.value = "10:00";
+    }
+  };
+
+  serviceType.addEventListener("change", refresh);
+  refresh();
+}
+
 
 function setupTicketSuggestion() {
   const origin = document.querySelector("#originAirport");

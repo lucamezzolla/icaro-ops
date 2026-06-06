@@ -8,7 +8,6 @@ $session = require_auth_session();
 $companyId = (int)$session['company_id'];
 $serviceId = filter_input(INPUT_GET, 'serviceId', FILTER_VALIDATE_INT);
 $routeId = filter_input(INPUT_GET, 'routeId', FILTER_VALIDATE_INT);
-
 $id = $serviceId ?: $routeId;
 
 if (!$id) {
@@ -17,9 +16,19 @@ if (!$id) {
 
 $pdo = db();
 
+$columns = table_columns($pdo, 'scheduled_services');
+$serviceTypeExpr = isset($columns['service_type'])
+    ? "ss.service_type"
+    : "CASE WHEN ss.scheduled_departure_time_utc IS NULL THEN 'ON_DEMAND' ELSE 'SCHEDULED' END AS service_type";
+$compatibleModelsExpr = isset($columns['compatible_aircraft_model_codes'])
+    ? "ss.compatible_aircraft_model_codes"
+    : "'C208B_GRAND_CARAVAN_EX,PC12_NGX,DHC6_TWIN_OTTER_400,L410_NG' AS compatible_aircraft_model_codes";
+
 $stmt = $pdo->prepare("
     SELECT
       ss.*,
+      {$serviceTypeExpr},
+      {$compatibleModelsExpr},
       ar.route_code,
       ar.origin_airport_icao_code,
       ar.destination_airport_icao_code,
@@ -58,6 +67,11 @@ if (!$service) {
     json_response(['error' => 'SERVICE_NOT_FOUND'], 404);
 }
 
+$service['compatible_aircraft_icao_codes'] = compatible_icao_codes(
+    $pdo,
+    (string)($service['compatible_aircraft_model_codes'] ?? '')
+);
+
 $flightsStmt = $pdo->prepare("
     SELECT
       id,
@@ -91,3 +105,49 @@ json_response([
     'service' => $service,
     'recent_flights' => $flightsStmt->fetchAll(),
 ]);
+
+function compatible_icao_codes(PDO $pdo, string $modelCodesCsv): string
+{
+    $modelCodes = array_values(array_filter(array_map(
+        static fn (string $value): string => trim($value),
+        explode(',', $modelCodesCsv)
+    )));
+
+    if (!$modelCodes) {
+        return 'C208';
+    }
+
+    $placeholders = implode(',', array_fill(0, count($modelCodes), '?'));
+
+    $stmt = $pdo->prepare("
+        SELECT model_code, icao_type_code
+        FROM aircraft_models
+        WHERE model_code IN ({$placeholders})
+        ORDER BY FIELD(model_code, {$placeholders})
+    ");
+
+    $params = array_merge($modelCodes, $modelCodes);
+    $stmt->execute($params);
+
+    $codes = [];
+    foreach ($stmt->fetchAll() as $row) {
+        if (!empty($row['icao_type_code'])) {
+            $codes[] = $row['icao_type_code'];
+        }
+    }
+
+    return implode(', ', array_values(array_unique($codes)));
+}
+
+function table_columns(PDO $pdo, string $tableName): array
+{
+    $stmt = $pdo->prepare("
+        SELECT COLUMN_NAME
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :table_name
+    ");
+    $stmt->execute(['table_name' => $tableName]);
+
+    return array_flip(array_map(static fn ($row) => $row['COLUMN_NAME'], $stmt->fetchAll()));
+}
