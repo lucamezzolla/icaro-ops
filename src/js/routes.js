@@ -11,6 +11,11 @@ const API = {
 let services = [];
 let lastSuggestedTicketPrice = null;
 
+function getFlightTypeSelect() {
+  return getFlightTypeSelect() || document.querySelector("#flightType");
+}
+
+
 document.addEventListener("DOMContentLoaded", async () => {
   startUtcClock();
   document.querySelector("#refreshButton")?.addEventListener("click", loadRoutes);
@@ -172,7 +177,7 @@ function openAddRouteDialog() {
   document.querySelector("#originAirport").value = "";
   document.querySelector("#destinationAirport").value = "";
 
-  const serviceType = document.querySelector("#serviceType");
+  const serviceType = getFlightTypeSelect();
   const scheduledTime = document.querySelector("#scheduledTime");
 
   if (serviceType) {
@@ -442,7 +447,7 @@ async function removeService(serviceId) {
 
 
 function setupFlightTypeExplanation() {
-  const serviceType = document.querySelector("#serviceType");
+  const serviceType = getFlightTypeSelect();
   const explanation = document.querySelector("#flightTypeExplanation");
 
   if (!serviceType || !explanation) {
@@ -467,7 +472,7 @@ function setupFlightTypeExplanation() {
 
 
 function setupServiceTypeToggle() {
-  const serviceType = document.querySelector("#serviceType");
+  const serviceType = getFlightTypeSelect();
   const scheduledTime = document.querySelector("#scheduledTime");
 
   if (!serviceType || !scheduledTime) {
@@ -477,23 +482,28 @@ function setupServiceTypeToggle() {
   const refresh = () => {
     const isScheduled = serviceType.value === "SCHEDULED";
 
-    scheduledTime.disabled = !isScheduled;
-    scheduledTime.required = isScheduled;
-
     if (isScheduled) {
+      scheduledTime.disabled = false;
+      scheduledTime.required = true;
+      scheduledTime.removeAttribute("disabled");
+      scheduledTime.removeAttribute("aria-disabled");
+
       if (!scheduledTime.value) {
         scheduledTime.value = "10:00";
       }
-      scheduledTime.removeAttribute("disabled");
     } else {
       scheduledTime.value = "";
+      scheduledTime.required = false;
+      scheduledTime.disabled = true;
       scheduledTime.setAttribute("disabled", "disabled");
+      scheduledTime.setAttribute("aria-disabled", "true");
     }
   };
 
   if (!serviceType.dataset.bound) {
     serviceType.dataset.bound = "true";
     serviceType.addEventListener("change", refresh);
+    serviceType.addEventListener("input", refresh);
   }
 
   refresh();
@@ -592,7 +602,7 @@ function setupDialogCloseButtons() {
  * versions, because routes.js has been patched many times during migration.
  */
 function forceScheduledDepartureController() {
-  const serviceType = document.querySelector("#serviceType");
+  const serviceType = getFlightTypeSelect();
   const scheduledTime = document.querySelector("#scheduledTime");
 
   if (!serviceType || !scheduledTime) {
@@ -671,7 +681,7 @@ document.addEventListener("click", event => {
 
 
 function normalizedFlightFormPayload() {
-  const serviceType = document.querySelector("#serviceType")?.value || "ON_DEMAND";
+  const serviceType = getFlightTypeSelect()?.value || "ON_DEMAND";
   const scheduledTimeField = document.querySelector("#scheduledTime");
   const scheduledTime = serviceType === "SCHEDULED"
     ? (scheduledTimeField?.value || "10:00")
