@@ -50,11 +50,12 @@ try {
     }
 
     $aircraft = find_compatible_aircraft_for_flight($pdo, $companyId, (string)$service['origin_airport_icao_code'], [
-        'required_aircraft_class' => $service['required_aircraft_class'] ?: 'LIGHT_COMMERCIAL',
+        'required_aircraft_class' => $service['required_aircraft_class'] ?: 'MANUAL_SELECTION',
         'preferred_aircraft_model_id' => $service['preferred_aircraft_model_id'],
-        'min_range_km' => $service['planned_distance_km'] ?? 0,
+        'allowed_model_codes' => $service['compatible_aircraft_model_codes'] ?? '',
+        'min_range_km' => 0,
         'min_passenger_capacity' => 1,
-        'max_passenger_capacity' => 19,
+        'max_passenger_capacity' => null,
     ]);
 
     if (!$aircraft) {
@@ -179,7 +180,7 @@ try {
 function fetch_service(PDO $pdo, int $companyId, int $serviceId): ?array {
     $stmt = $pdo->prepare("
         SELECT ss.id AS service_id, ss.company_id, ss.air_route_id, ss.service_code,
-               ss.preferred_aircraft_model_id, ss.required_aircraft_class,
+               ss.preferred_aircraft_model_id, ss.required_aircraft_class, ss.compatible_aircraft_model_codes,
                ss.base_ticket_price, ss.currency_code,
                ar.route_code, ar.origin_airport_icao_code, ar.destination_airport_icao_code,
                ar.planned_distance_km, ar.estimated_block_minutes

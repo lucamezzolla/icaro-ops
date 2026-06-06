@@ -19,6 +19,7 @@ $flightType = strtoupper(trim((string)($payload['service_type'] ?? $payload['fli
 $flightCategory = strtoupper(trim((string)($payload['route_category_code'] ?? $payload['flight_category_code'] ?? '')));
 $departure = trim((string)($payload['scheduled_departure_time_utc'] ?? ''));
 $ticketPrice = (float)($payload['ticket_price'] ?? $payload['base_ticket_price'] ?? 0);
+$selectedModelCodes = normalize_selected_model_codes($payload['selected_aircraft_model_codes'] ?? $payload['aircraft_model_codes'] ?? []);
 
 if (!in_array($flightType, ['SCHEDULED', 'ON_DEMAND'], true)) {
     json_response(['error' => 'INVALID_FLIGHT_TYPE'], 422);
@@ -30,6 +31,13 @@ if (!preg_match('/^[A-Z0-9]{4}$/', $origin) || !preg_match('/^[A-Z0-9]{4}$/', $d
 
 if ($origin === $destination) {
     json_response(['error' => 'INVALID_FLIGHT'], 422);
+}
+
+if (!$selectedModelCodes) {
+    json_response([
+        'error' => 'NO_AIRCRAFT_MODELS_SELECTED',
+        'message' => 'Select at least one owned airplane model for this flight.',
+    ], 422);
 }
 
 if ($flightType === 'SCHEDULED') {
@@ -62,6 +70,15 @@ if (
     json_response(['error' => 'AIRPORT_COORDINATES_MISSING'], 409);
 }
 
+$ownedModels = fetch_owned_models_by_code($pdo, $companyId, $selectedModelCodes);
+
+if (count($ownedModels) !== count($selectedModelCodes)) {
+    json_response([
+        'error' => 'AIRCRAFT_MODEL_NOT_OWNED',
+        'message' => 'One or more selected airplane models are not owned by your company.',
+    ], 422);
+}
+
 $companyStmt = $pdo->prepare("SELECT currency_code FROM companies WHERE id = :company_id LIMIT 1");
 $companyStmt->execute(['company_id' => $companyId]);
 $company = $companyStmt->fetch() ?: ['currency_code' => 'EUR'];
@@ -80,33 +97,16 @@ if ($flightCategory === '') {
 $routeScope = route_scope_from_category($flightCategory);
 $routeMarket = route_market_from_category($flightCategory);
 
-$compatibleModels = compatible_aircraft_models_for_route($pdo, $flightCategory, $distanceKm, 1, 19);
-
-if (!$compatibleModels) {
-    json_response([
-        'error' => 'NO_COMPATIBLE_MODELS_FOR_FLIGHT',
-        'message' => 'No aircraft model is compatible with this flight.',
-    ], 409);
-}
-
-$preferredModel = $compatibleModels[0];
-$compatibleModelCodes = compatible_model_codes_csv($compatibleModels);
+$preferredModel = $ownedModels[0];
+$compatibleModelCodes = implode(',', $selectedModelCodes);
 $cruiseSpeed = max(1.0, (float)($preferredModel['cruise_speed_kmh'] ?? 340));
 $durationMinutes = max(20, (int)ceil(($distanceKm / $cruiseSpeed) * 60 + 15));
 
-/*
- * Legacy hidden air route code: still needed internally for origin/destination.
- * User-visible flight code is generated below as DOM-0001 / INT-0001 / etc.
- */
 $hiddenAirRouteCode = "AR-{$origin}-{$destination}-{$flightCategory}-{$routeMarket}";
 
 try {
     $pdo->beginTransaction();
 
-    /*
-     * Reuse hidden air_route for the same origin/destination/category.
-     * This is not user-visible anymore.
-     */
     $routeStmt = $pdo->prepare("
         SELECT id
         FROM air_routes
@@ -159,8 +159,8 @@ try {
               'CIVIL',
               'LIGHT_COMMERCIAL',
               1,
-              19,
-              :min_range_km,
+              999,
+              0,
               :planned_distance_km,
               :estimated_block_minutes,
               'ACTIVE'
@@ -174,7 +174,6 @@ try {
             'destination' => $destination,
             'route_scope' => $routeScope,
             'route_market' => $routeMarket,
-            'min_range_km' => number_format($distanceKm, 2, '.', ''),
             'planned_distance_km' => number_format($distanceKm, 2, '.', ''),
             'estimated_block_minutes' => $durationMinutes,
         ]);
@@ -184,16 +183,7 @@ try {
         $airRouteId = (int)$airRouteId;
     }
 
-    /*
-     * User-visible code for the created flight definition.
-     * Cancelled/removed flights never free their number.
-     */
     $flightPublicCode = next_flight_public_code($pdo, $flightCategory);
-
-    /*
-     * Internal unique code. Includes epoch so recreating the same removed flight
-     * can never collide with uq_scheduled_services_code.
-     */
     $timePart = $flightType === 'SCHEDULED'
         ? str_replace(':', '', substr((string)$departure, 0, 5))
         : 'ONDEMAND';
@@ -220,7 +210,7 @@ try {
     put($values, $columns, 'service_status', 'ACTIVE');
     put($values, $columns, 'preferred_aircraft_model_id', (int)$preferredModel['id']);
     put($values, $columns, 'compatible_aircraft_model_codes', $compatibleModelCodes);
-    put($values, $columns, 'required_aircraft_class', 'LIGHT_COMMERCIAL');
+    put($values, $columns, 'required_aircraft_class', 'MANUAL_SELECTION');
     put($values, $columns, 'base_ticket_price', number_format($ticketPrice, 2, '.', ''));
     put($values, $columns, 'currency_code', $company['currency_code'] ?? 'EUR');
     put($values, $columns, 'auto_dispatch_enabled', 1);
@@ -240,8 +230,9 @@ try {
         'scheduled_departure_time_utc' => $departure,
         'air_route_id' => $airRouteId,
         'service_id' => $serviceId,
+        'selected_aircraft_model_codes' => $selectedModelCodes,
         'compatible_aircraft_model_codes' => $compatibleModelCodes,
-        'compatible_aircraft_icao_codes' => compatible_icao_codes_csv($compatibleModels),
+        'compatible_aircraft_icao_codes' => compatible_icao_codes_csv($ownedModels),
     ]);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) {
@@ -252,6 +243,64 @@ try {
         'error' => 'FLIGHT_CREATE_FAILED',
         'message' => $exception->getMessage(),
     ], 500);
+}
+
+function normalize_selected_model_codes(mixed $value): array
+{
+    if (is_string($value)) {
+        $value = explode(',', $value);
+    }
+
+    if (!is_array($value)) {
+        return [];
+    }
+
+    $codes = [];
+
+    foreach ($value as $code) {
+        $code = strtoupper(trim((string)$code));
+
+        if ($code !== '' && preg_match('/^[A-Z0-9_]+$/', $code)) {
+            $codes[] = $code;
+        }
+    }
+
+    return array_values(array_unique($codes));
+}
+
+function fetch_owned_models_by_code(PDO $pdo, int $companyId, array $modelCodes): array
+{
+    if (!$modelCodes) {
+        return [];
+    }
+
+    $placeholders = implode(',', array_fill(0, count($modelCodes), '?'));
+
+    $stmt = $pdo->prepare("
+        SELECT
+          am.id,
+          am.model_code,
+          am.icao_type_code,
+          am.manufacturer,
+          am.model_name,
+          am.passenger_capacity_standard,
+          am.range_km,
+          am.cruise_speed_kmh
+        FROM aircraft_models am
+        WHERE am.model_code IN ({$placeholders})
+          AND EXISTS (
+            SELECT 1
+            FROM company_aircraft ca
+            WHERE ca.company_id = ?
+              AND ca.aircraft_model_id = am.id
+          )
+        ORDER BY FIELD(am.model_code, {$placeholders})
+    ");
+
+    $params = array_merge($modelCodes, [$companyId], $modelCodes);
+    $stmt->execute($params);
+
+    return $stmt->fetchAll();
 }
 
 function fetch_airport(PDO $pdo, string $icao): ?array

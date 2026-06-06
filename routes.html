@@ -139,6 +139,17 @@
             <input id="scheduledTime" name="scheduled_departure_time_utc" value="" disabled type="time">
           </label>
 
+          <fieldset class="form-fieldset">
+            <legend>Airplanes for this flight</legend>
+            <p class="muted">
+              Select the airplane models from your owned fleet that may operate this flight.
+              Icaro Ops will not auto-pick theoretical aircraft here.
+            </p>
+            <div id="ownedAircraftModelChoices" class="choice-list">
+              <p class="muted">Open the dialog to load owned airplanes.</p>
+            </div>
+          </fieldset>
+
           <label>
             Ticket price
             <input id="ticketPrice" name="ticket_price" type="number" min="0" step="0.01" value="0.00" required>

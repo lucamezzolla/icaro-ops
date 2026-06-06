@@ -24,6 +24,15 @@ function find_compatible_aircraft_for_flight(
     $minRangeKm = isset($requirements['min_range_km']) ? (float)$requirements['min_range_km'] : 0.0;
     $minPassengerCapacity = isset($requirements['min_passenger_capacity']) ? (int)$requirements['min_passenger_capacity'] : 1;
     $maxPassengerCapacity = isset($requirements['max_passenger_capacity']) ? (int)$requirements['max_passenger_capacity'] : null;
+    $allowedModelCodes = $requirements['allowed_model_codes'] ?? [];
+
+    if (is_string($allowedModelCodes)) {
+        $allowedModelCodes = array_values(array_filter(array_map('trim', explode(',', $allowedModelCodes))));
+    }
+
+    if (!is_array($allowedModelCodes)) {
+        $allowedModelCodes = [];
+    }
 
     $sql = "
         SELECT

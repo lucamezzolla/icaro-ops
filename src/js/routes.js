@@ -5,7 +5,8 @@ const API = {
   preview: "api/public/routes/preview.php",
   startServiceFlight: "api/public/flights/start-service-now.php",
   removeService: "api/public/routes/delete.php",
-  aircraftByIcao: code => `api/public/fleet/model-by-icao.php?icao=${encodeURIComponent(code)}`
+  aircraftByIcao: code => `api/public/fleet/model-by-icao.php?icao=${encodeURIComponent(code)}`,
+  ownedAircraftModels: "api/public/fleet/owned-models.php"
 };
 
 let flights = [];
@@ -123,6 +124,7 @@ function openAddFlightDialog() {
   setupFlightTypeToggle();
   setupFlightTypeExplanation();
   applyFlightTypeState();
+  loadOwnedAircraftModelsForFlight();
 
   dialog.showModal();
 }
@@ -366,6 +368,56 @@ function renderPreview(preview) {
   `;
 }
 
+
+async function loadOwnedAircraftModelsForFlight() {
+  const container = document.querySelector("#ownedAircraftModelChoices");
+
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = `<p class="muted">Loading owned airplanes...</p>`;
+
+  try {
+    const data = await getJson(API.ownedAircraftModels);
+    const models = data.models || [];
+
+    if (!models.length) {
+      container.innerHTML = `<p class="muted">No owned airplanes yet. Buy an aircraft from Fleet first.</p>`;
+      return;
+    }
+
+    container.innerHTML = models.map(model => `
+      <label class="choice-row">
+        <input
+          type="checkbox"
+          name="selected_aircraft_model_codes"
+          value="${escapeHtml(model.model_code)}"
+          ${models.length === 1 ? "checked" : ""}
+        >
+        <span>
+          <strong>${escapeHtml(model.icao_type_code || model.model_code)}</strong>
+          ${escapeHtml(model.manufacturer || "")} ${escapeHtml(model.model_name || "")}
+          <small class="muted">
+            Owned: ${escapeHtml(model.owned_count || 0)}
+            · Available: ${escapeHtml(model.available_count || 0)}
+            · Registrations: ${escapeHtml(model.registrations || "-")}
+          </small>
+        </span>
+      </label>
+    `).join("");
+  } catch (error) {
+    container.innerHTML = `<p class="page-error">${escapeHtml(error.message || "Unable to load owned airplanes.")}</p>`;
+  }
+}
+
+function selectedAircraftModelCodes() {
+  return Array.from(document.querySelectorAll("input[name='selected_aircraft_model_codes']:checked"))
+    .map(input => input.value)
+    .filter(Boolean);
+}
+
+
 function flightFormPayload() {
   const type = getFlightTypeSelect()?.value || "ON_DEMAND";
   const scheduledTime = type === "SCHEDULED"
@@ -376,6 +428,7 @@ function flightFormPayload() {
     service_type: type,
     flight_type: type,
     route_category_code: document.querySelector("#routeCategory")?.value || "",
+    selected_aircraft_model_codes: selectedAircraftModelCodes(),
     origin_airport_icao_code: document.querySelector("#originAirport").value.trim().toUpperCase(),
     destination_airport_icao_code: document.querySelector("#destinationAirport").value.trim().toUpperCase(),
     scheduled_departure_time_utc: scheduledTime,
