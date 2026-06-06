@@ -59,7 +59,7 @@ function renderRoutes(rows) {
     <tr>
       <td>
         <strong>${escapeHtml(service.flight_route_code || service.service_code)}</strong>
-        <div class="muted">${escapeHtml(service.service_code)}</div>
+        <div class="muted">${escapeHtml(publicFlightCode(service))}</div>
       </td>
       <td>${escapeHtml(service.origin_airport_icao_code)} → ${escapeHtml(service.destination_airport_icao_code)}</td>
       <td>${serviceScheduleLabel(service)}</td>
@@ -116,6 +116,24 @@ async function startServiceFlight(serviceId) {
 function isOnDemandService(service) {
   const type = service.service_type || (service.scheduled_departure_time_utc ? "SCHEDULED" : "ON_DEMAND");
   return type === "ON_DEMAND";
+}
+
+
+function publicFlightCode(row) {
+  const explicitCode = row.flight_route_code || row.public_flight_code;
+
+  if (explicitCode && !String(explicitCode).match(/^[A-Z]{3}-[0-9]{4}-/)) {
+    return explicitCode;
+  }
+
+  const internal = String(row.service_code || "");
+  const match = internal.match(/^([A-Z]{3}-[0-9]{4})-/);
+
+  if (match) {
+    return match[1];
+  }
+
+  return internal || row.route_code || "-";
 }
 
 function serviceScheduleLabel(service) {
@@ -296,7 +314,7 @@ async function openRouteDetail(serviceId) {
     content.innerHTML = `
       <div class="detail-grid">
         ${section("Air route", [
-          ["Flight code", s.flight_route_code || s.route_public_code || s.route_code],
+          ["Flight code", publicFlightCode(s)],
           ["Route", `${s.origin_airport_icao_code} → ${s.destination_airport_icao_code}`],
           ["Origin", `${s.origin_airport_name || "-"} (${s.origin_airport_icao_code})`],
           ["Destination", `${s.destination_airport_name || "-"} (${s.destination_airport_icao_code})`],

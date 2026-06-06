@@ -23,6 +23,7 @@ $stmt = $pdo->prepare("
       ss.id AS service_id,
       ss.id AS route_id,
       ss.service_code,
+      ss.flight_route_code,
       {$serviceTypeExpr},
       ss.company_id,
       ss.air_route_id,
