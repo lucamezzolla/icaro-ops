@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
 require_once __DIR__ . '/../../lib/flight-dispatch-selection.php';
+require_once __DIR__ . '/../../lib/missed-scheduled-flight-penalty.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['error' => 'METHOD_NOT_ALLOWED'], 405);
@@ -48,6 +49,27 @@ try {
         : dispatch_choose_best_available_aircraft($pdo, $companyId, $service);
 
     if (!$aircraft) {
+        if (!$isOnDemand) {
+            apply_missed_scheduled_flight_penalty(
+                $pdo,
+                $companyId,
+                $service,
+                'No compatible available aircraft was present at the scheduled flight origin airport.'
+            );
+
+            $pdo->commit();
+
+            json_response([
+                'status' => 'SCHEDULED_FLIGHT_MISSED',
+                'error' => 'NO_AVAILABLE_AIRCRAFT_AT_ORIGIN',
+                'message' => 'Scheduled flight could not depart. A mailbox notification was sent, a temporary penalty was applied, and reputation was reduced.',
+                'origin_airport_icao_code' => $service['origin_airport_icao_code'],
+                'compatible_aircraft_model_codes' => $service['compatible_aircraft_model_codes'] ?? '',
+                'penalty_amount' => '100000.00',
+                'reputation_loss' => 10,
+            ], 409);
+        }
+
         $pdo->rollBack();
         json_response([
             'error' => 'NO_AVAILABLE_AIRCRAFT_AT_ORIGIN',
