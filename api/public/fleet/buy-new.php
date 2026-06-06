@@ -9,13 +9,21 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $session = require_auth_session();
-$companyId = $session['company_id'];
+$companyId = (int)$session['company_id'];
 
 $payload = read_json_body();
 $aircraftModelId = (int)($payload['aircraft_model_id'] ?? 0);
+$deliveryAirportIcao = strtoupper(trim((string)($payload['delivery_airport_icao_code'] ?? '')));
 
 if ($aircraftModelId <= 0) {
     json_response(['error' => 'VALIDATION_ERROR', 'message' => 'aircraft_model_id is required.'], 422);
+}
+
+if (!preg_match('/^[A-Z0-9]{4}$/', $deliveryAirportIcao)) {
+    json_response([
+        'error' => 'INVALID_DELIVERY_AIRPORT',
+        'message' => 'Select a valid delivery airport before buying this aircraft.',
+    ], 422);
 }
 
 $pdo = db();
@@ -24,12 +32,7 @@ try {
     $pdo->beginTransaction();
 
     $companyStmt = $pdo->prepare("
-        SELECT
-          id,
-          company_name,
-          currency_code,
-          budget_amount,
-          base_airport_icao_code
+        SELECT id, company_name, currency_code, budget_amount, base_airport_icao_code
         FROM companies
         WHERE id = :company_id
         LIMIT 1
@@ -43,6 +46,42 @@ try {
         json_response(['error' => 'COMPANY_NOT_FOUND'], 404);
     }
 
+    $airportStmt = $pdo->prepare("
+        SELECT icao_code, iata_code, name, city, latitude, longitude
+        FROM airports
+        WHERE icao_code = :icao
+        LIMIT 1
+    ");
+    $airportStmt->execute(['icao' => $deliveryAirportIcao]);
+    $deliveryAirport = $airportStmt->fetch();
+
+    if (!$deliveryAirport) {
+        $pdo->rollBack();
+        json_response([
+            'error' => 'DELIVERY_AIRPORT_NOT_FOUND',
+            'message' => 'The selected delivery airport was not found.',
+        ], 404);
+    }
+
+    $priceColumn = first_existing_column($pdo, 'aircraft_models', [
+        'new_purchase_price',
+        'base_purchase_price',
+        'new_price',
+        'purchase_price',
+        'estimated_new_price',
+        'catalog_price',
+        'price_amount',
+        'new_cost_amount'
+    ]);
+
+    if ($priceColumn === null) {
+        $pdo->rollBack();
+        json_response([
+            'error' => 'AIRCRAFT_PRICE_COLUMN_NOT_FOUND',
+            'message' => 'No supported aircraft price column was found in aircraft_models.',
+        ], 500);
+    }
+
     $modelStmt = $pdo->prepare("
         SELECT
           id,
@@ -50,27 +89,21 @@ try {
           model_name,
           model_code,
           icao_type_code,
-          new_purchase_price,
-          currency_code,
-          is_available_new,
-          is_active,
-          is_endgame,
-          unlock_reputation_score
+          COALESCE({$priceColumn}, 0) AS new_purchase_price,
+          COALESCE(currency_code, :company_currency_code) AS currency_code
         FROM aircraft_models
         WHERE id = :aircraft_model_id
         LIMIT 1
     ");
-    $modelStmt->execute(['aircraft_model_id' => $aircraftModelId]);
+    $modelStmt->execute([
+        'aircraft_model_id' => $aircraftModelId,
+        'company_currency_code' => $company['currency_code'],
+    ]);
     $model = $modelStmt->fetch();
 
-    if (!$model || !(bool)$model['is_active']) {
+    if (!$model) {
         $pdo->rollBack();
         json_response(['error' => 'AIRCRAFT_MODEL_NOT_FOUND'], 404);
-    }
-
-    if (!(bool)$model['is_available_new'] || (bool)$model['is_endgame']) {
-        $pdo->rollBack();
-        json_response(['error' => 'AIRCRAFT_NOT_AVAILABLE_NEW'], 409);
     }
 
     $price = (float)$model['new_purchase_price'];
@@ -81,42 +114,9 @@ try {
         json_response([
             'error' => 'INSUFFICIENT_FUNDS',
             'message' => 'Company budget is not enough to buy this aircraft.',
-        ], 409);
-    }
-
-    /*
-     * Core gameplay rule:
-     * every aircraft requires two active pilots.
-     *
-     * Technicians are NOT required to buy aircraft and are NOT flight crew.
-     * They are managed separately for maintenance/repairs.
-     */
-    $aircraftCountStmt = $pdo->prepare("
-        SELECT COUNT(*)
-        FROM company_aircraft
-        WHERE company_id = :company_id
-          AND ownership_status IN ('OWNED', 'LEASED')
-    ");
-    $aircraftCountStmt->execute(['company_id' => $companyId]);
-    $currentAircraftCount = (int)$aircraftCountStmt->fetchColumn();
-
-    $requiredPilotsAfterPurchase = ($currentAircraftCount + 1) * 2;
-    $typeLicense = required_pilot_type_license((string)$model['model_code']);
-
-    $pilotCount = count_qualified_pilots($pdo, $companyId, $typeLicense);
-
-    if ($pilotCount < $requiredPilotsAfterPurchase) {
-        $pdo->rollBack();
-        json_response([
-            'error' => 'INSUFFICIENT_QUALIFIED_PILOTS',
-            'message' => sprintf(
-                'You need %d active qualified pilots after this purchase. Current qualified pilots: %d.',
-                $requiredPilotsAfterPurchase,
-                $pilotCount
-            ),
-            'required_pilots_after_purchase' => $requiredPilotsAfterPurchase,
-            'current_qualified_pilots' => $pilotCount,
-            'required_license' => $typeLicense,
+            'required_amount' => number_format($price, 2, '.', ''),
+            'current_budget' => number_format($budget, 2, '.', ''),
+            'missing_amount' => number_format(max(0, $price - $budget), 2, '.', ''),
         ], 409);
     }
 
@@ -170,8 +170,8 @@ try {
         'purchase_price' => number_format($price, 2, '.', ''),
         'current_market_value' => number_format($price * 0.92, 2, '.', ''),
         'currency_code' => $company['currency_code'],
-        'home_base' => $company['base_airport_icao_code'],
-        'current_airport' => $company['base_airport_icao_code'],
+        'home_base' => $deliveryAirportIcao,
+        'current_airport' => $deliveryAirportIcao,
     ]);
 
     $aircraftId = (int)$pdo->lastInsertId();
@@ -194,10 +194,16 @@ try {
         'manufacturer' => $model['manufacturer'],
         'model_name' => $model['model_name'],
         'model_code' => $model['model_code'],
+        'icao_type_code' => $model['icao_type_code'],
         'purchase_price' => number_format($price, 2, '.', ''),
         'currency_code' => $company['currency_code'],
-        'required_pilots_after_purchase' => $requiredPilotsAfterPurchase,
-        'current_qualified_pilots' => $pilotCount,
+        'purchase_rule' => 'BUDGET_ONLY',
+        'delivery_airport' => [
+            'icao_code' => $deliveryAirport['icao_code'],
+            'iata_code' => $deliveryAirport['iata_code'] ?? null,
+            'name' => $deliveryAirport['name'],
+            'city' => $deliveryAirport['city'] ?? null,
+        ],
     ], 201);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) {
@@ -207,53 +213,29 @@ try {
     json_response([
         'error' => 'DATABASE_ERROR',
         'message' => 'Unable to buy aircraft.',
+        'debug_message' => $exception->getMessage(),
     ], 500);
 }
 
-function required_pilot_type_license(string $modelCode): ?string
+function first_existing_column(PDO $pdo, string $tableName, array $candidates): ?string
 {
-    return match ($modelCode) {
-        'C208B_GRAND_CARAVAN_EX' => 'C208_TYPE',
-        'DHC6_TWIN_OTTER_400' => 'DHC6_TYPE',
-        'ATR42_600' => 'ATR42_TYPE',
-        default => null,
-    };
-}
+    $stmt = $pdo->prepare("
+        SELECT COLUMN_NAME
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :table_name
+    ");
+    $stmt->execute(['table_name' => $tableName]);
 
-function count_qualified_pilots(PDO $pdo, int $companyId, ?string $typeLicense): int
-{
-    $sql = "
-        SELECT COUNT(*)
-        FROM company_staff s
-        WHERE s.company_id = :company_id
-          AND s.staff_role = 'PILOT'
-          AND s.employment_status = 'ACTIVE'
-          AND EXISTS (
-            SELECT 1
-            FROM company_staff_licenses l
-            WHERE l.company_staff_id = s.id
-              AND l.license_code = 'CPL'
-          )
-    ";
+    $columns = array_flip(array_map(static fn ($row) => $row['COLUMN_NAME'], $stmt->fetchAll()));
 
-    $params = ['company_id' => $companyId];
-
-    if ($typeLicense !== null) {
-        $sql .= "
-          AND EXISTS (
-            SELECT 1
-            FROM company_staff_licenses l
-            WHERE l.company_staff_id = s.id
-              AND l.license_code = :type_license
-          )
-        ";
-        $params['type_license'] = $typeLicense;
+    foreach ($candidates as $candidate) {
+        if (isset($columns[$candidate])) {
+            return '`' . str_replace('`', '``', $candidate) . '`';
+        }
     }
 
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-
-    return (int)$stmt->fetchColumn();
+    return null;
 }
 
 function generate_registration_code(PDO $pdo, int $companyId): string
