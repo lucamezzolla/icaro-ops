@@ -128,3 +128,61 @@ dialog::backdrop { background: rgba(0, 0, 0, .62); }
 }
 .aircraft-choice-row input { margin-top: 4px; }
 .aircraft-choice-row strong, .aircraft-choice-row small { display: block; }
+
+
+/* Force the real <dialog> elements themselves to 90% viewport size. */
+dialog,
+#routeDialog,
+#routeDetailDialog,
+#staffHiringTableDialog,
+#aircraftMarketTableDialog,
+#aircraftModelDialog,
+#chooseAircraftDialog {
+  width: 90vw !important;
+  max-width: 90vw !important;
+  height: 90vh !important;
+  max-height: 90vh !important;
+  padding: 0 !important;
+  border: 0;
+  border-radius: 22px;
+  overflow: hidden;
+}
+
+/* Keep the internal card filling the actual dialog element. */
+dialog > form.dialog-card,
+dialog .dialog-card,
+dialog .wide-dialog,
+#routeDialog > form,
+#routeDetailDialog > form,
+#staffHiringTableDialog > form,
+#aircraftMarketTableDialog > form,
+#aircraftModelDialog > form,
+#chooseAircraftDialog > form {
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  margin: 0 !important;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scroll only the body area, not the whole dialog. */
+dialog .dialog-body,
+#routeDialog .dialog-body,
+#routeDetailDialog .dialog-body,
+#staffHiringTableDialog .dialog-body,
+#aircraftMarketTableDialog .dialog-body,
+#aircraftModelDialog .dialog-body,
+#chooseAircraftDialog .dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Header/footer remain visible. */
+dialog .dialog-header,
+dialog .dialog-footer {
+  flex: 0 0 auto;
+}
+
