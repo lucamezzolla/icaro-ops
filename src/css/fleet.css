@@ -67,3 +67,41 @@ dialog{width:min(980px,calc(100vw - 28px));border:1px solid var(--line);border-r
   justify-content: flex-end;
   margin-top: 16px;
 }
+
+.wide-dialog {
+  width: min(1180px, 96vw);
+}
+
+.compact-dialog-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 14px;
+}
+
+.compact-dialog-table th,
+.compact-dialog-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.10);
+  text-align: left;
+  vertical-align: top;
+}
+
+.compact-dialog-table th {
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+}
+
+.dialog-detail-panel {
+  margin-top: 18px;
+}
+
+.dialog-model-image {
+  max-width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  border-radius: 14px;
+  margin: 10px 0 16px;
+  background: rgba(255,255,255,.05);
+}

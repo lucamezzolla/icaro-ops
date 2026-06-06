@@ -26,13 +26,12 @@ try {
     $stmt = $pdo->prepare("
         SELECT *
         FROM staff_candidates
-        WHERE id = :candidate_id
+        WHERE id = :id
           AND status = 'AVAILABLE'
-          AND (expires_at_utc IS NULL OR expires_at_utc > UTC_TIMESTAMP())
         LIMIT 1
         FOR UPDATE
     ");
-    $stmt->execute(['candidate_id' => $candidateId]);
+    $stmt->execute(['id' => $candidateId]);
     $candidate = $stmt->fetch();
 
     if (!$candidate) {
@@ -48,6 +47,8 @@ try {
     ");
     $companyStmt->execute(['company_id' => $companyId]);
     $company = $companyStmt->fetch();
+
+    $base = $candidate['preferred_base_icao_code'] ?: ($company['base_airport_icao_code'] ?? 'LIRA');
 
     $insert = $pdo->prepare("
         INSERT INTO company_staff (
@@ -75,7 +76,8 @@ try {
           daily_retainer,
           revenue_share_percent,
           currency_code,
-          morale_score
+          morale_score,
+          fatigue_score
         ) VALUES (
           :company_id,
           :source_candidate_id,
@@ -101,10 +103,10 @@ try {
           :daily_retainer,
           :revenue_share_percent,
           :currency_code,
-          :morale_score
+          :morale_score,
+          0
         )
     ");
-
     $insert->execute([
         'company_id' => $companyId,
         'source_candidate_id' => $candidateId,
@@ -112,7 +114,7 @@ try {
         'last_name' => $candidate['last_name'],
         'display_name' => $candidate['display_name'],
         'staff_role' => $candidate['staff_role'],
-        'assigned_base_icao_code' => $candidate['preferred_base_icao_code'] ?: ($company['base_airport_icao_code'] ?? null),
+        'assigned_base_icao_code' => $base,
         'age_years' => $candidate['age_years'],
         'experience_level' => $candidate['experience_level'],
         'fear_score' => $candidate['fear_score'],
@@ -135,60 +137,48 @@ try {
     $staffId = (int)$pdo->lastInsertId();
 
     $licenses = $pdo->prepare("
-        SELECT license_code, proficiency_score, issued_at_utc, expires_at_utc
+        INSERT IGNORE INTO company_staff_licenses (
+          company_staff_id,
+          license_code,
+          proficiency_score,
+          issued_at_utc,
+          expires_at_utc
+        )
+        SELECT
+          :staff_id,
+          license_code,
+          proficiency_score,
+          issued_at_utc,
+          expires_at_utc
         FROM staff_candidate_licenses
         WHERE candidate_id = :candidate_id
     ");
-    $licenses->execute(['candidate_id' => $candidateId]);
+    $licenses->execute([
+        'staff_id' => $staffId,
+        'candidate_id' => $candidateId,
+    ]);
 
-    foreach ($licenses->fetchAll() as $license) {
-        $licenseInsert = $pdo->prepare("
-            INSERT IGNORE INTO company_staff_licenses (
-              company_staff_id,
-              license_code,
-              proficiency_score,
-              issued_at_utc,
-              expires_at_utc
-            ) VALUES (
-              :company_staff_id,
-              :license_code,
-              :proficiency_score,
-              :issued_at_utc,
-              :expires_at_utc
-            )
-        ");
-        $licenseInsert->execute([
-            'company_staff_id' => $staffId,
-            'license_code' => $license['license_code'],
-            'proficiency_score' => $license['proficiency_score'],
-            'issued_at_utc' => $license['issued_at_utc'],
-            'expires_at_utc' => $license['expires_at_utc'],
-        ]);
-    }
-
-    $update = $pdo->prepare("
+    $pdo->prepare("
         UPDATE staff_candidates
         SET status = 'HIRED'
-        WHERE id = :candidate_id
-    ");
-    $update->execute(['candidate_id' => $candidateId]);
+        WHERE id = :id
+    ")->execute(['id' => $candidateId]);
 
     $pdo->commit();
 
     json_response([
         'status' => 'HIRED',
-        'staff_id' => $staffId,
-        'candidate_id' => $candidateId,
+        'company_staff_id' => $staffId,
         'display_name' => $candidate['display_name'],
         'staff_role' => $candidate['staff_role'],
-    ]);
+    ], 201);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
 
     json_response([
-        'error' => 'HIRING_FAILED',
-        'message' => 'Unable to hire candidate.',
+        'error' => 'HIRE_FAILED',
+        'message' => $exception->getMessage(),
     ], 500);
 }
