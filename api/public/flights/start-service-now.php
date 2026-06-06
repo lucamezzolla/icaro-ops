@@ -1,29 +1,9 @@
 <?php
 declare(strict_types=1);
 
-ini_set('display_errors', '1');
-ini_set('display_startup_errors', '1');
-error_reporting(E_ALL);
-
-set_exception_handler(function (Throwable $exception): void {
-    http_response_code(500);
-    header('Content-Type: application/json; charset=utf-8');
-    echo json_encode([
-        'error' => 'UNCAUGHT_EXCEPTION',
-        'message' => $exception->getMessage(),
-        'file' => $exception->getFile(),
-        'line' => $exception->getLine(),
-    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-    exit;
-});
-
-set_error_handler(function (int $severity, string $message, string $file, int $line): bool {
-    throw new ErrorException($message, 0, $severity, $file, $line);
-});
-
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
-require_once __DIR__ . '/../../lib/dispatch-aircraft.php';
+require_once __DIR__ . '/../../lib/flight-dispatch-selection.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['error' => 'METHOD_NOT_ALLOWED'], 405);
@@ -32,10 +12,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $session = require_auth_session();
 $companyId = (int)$session['company_id'];
 $payload = read_json_body();
-$serviceId = (int)($payload['service_id'] ?? $payload['route_id'] ?? 0);
+
+$serviceId = (int)($payload['service_id'] ?? 0);
+$selectedAircraftId = isset($payload['company_aircraft_id'])
+    ? (int)$payload['company_aircraft_id']
+    : (isset($payload['aircraft_id']) ? (int)$payload['aircraft_id'] : 0);
 
 if ($serviceId <= 0) {
-    json_response(['error' => 'INVALID_SERVICE_ID'], 422);
+    json_response(['error' => 'INVALID_FLIGHT_ID'], 422);
 }
 
 $pdo = db();
@@ -43,123 +27,119 @@ $pdo = db();
 try {
     $pdo->beginTransaction();
 
-    $service = fetch_service($pdo, $companyId, $serviceId);
+    $service = dispatch_fetch_flight_definition_for_update($pdo, $companyId, $serviceId);
     if (!$service) {
         $pdo->rollBack();
-        json_response(['error' => 'SERVICE_NOT_FOUND'], 404);
+        json_response(['error' => 'FLIGHT_NOT_FOUND'], 404);
     }
 
-    $aircraft = find_compatible_aircraft_for_flight($pdo, $companyId, (string)$service['origin_airport_icao_code'], [
-        'required_aircraft_class' => $service['required_aircraft_class'] ?: 'MANUAL_SELECTION',
-        'preferred_aircraft_model_id' => $service['preferred_aircraft_model_id'],
-        'allowed_model_codes' => $service['compatible_aircraft_model_codes'] ?? '',
-        'min_range_km' => 0,
-        'min_passenger_capacity' => 1,
-        'max_passenger_capacity' => null,
-    ]);
+    $isOnDemand = strtoupper((string)$service['service_type']) === 'ON_DEMAND';
+
+    if ($isOnDemand && $selectedAircraftId <= 0) {
+        $pdo->rollBack();
+        json_response([
+            'error' => 'AIRCRAFT_SELECTION_REQUIRED',
+            'message' => 'Select an available aircraft at the origin airport before starting this non-scheduled flight.',
+        ], 422);
+    }
+
+    $aircraft = $isOnDemand
+        ? dispatch_fetch_specific_available_aircraft($pdo, $companyId, $service, $selectedAircraftId)
+        : dispatch_choose_best_available_aircraft($pdo, $companyId, $service);
 
     if (!$aircraft) {
         $pdo->rollBack();
         json_response([
-            'error' => 'NO_COMPATIBLE_AIRCRAFT_AT_ORIGIN',
-            'message' => 'No compatible available aircraft was found at the service origin airport.',
+            'error' => 'NO_AVAILABLE_AIRCRAFT_AT_ORIGIN',
+            'message' => 'No compatible available aircraft is present at the flight origin airport.',
             'origin_airport_icao_code' => $service['origin_airport_icao_code'],
-            'required_aircraft_class' => $service['required_aircraft_class'],
+            'compatible_aircraft_model_codes' => $service['compatible_aircraft_model_codes'] ?? '',
         ], 409);
     }
 
-    $pilots = fetch_c208_pilots($pdo, $companyId);
+    $pilots = dispatch_fetch_pilots_for_aircraft_model($pdo, $companyId, (string)$aircraft['model_code']);
     if (count($pilots) < 2) {
         $pdo->rollBack();
         json_response([
             'error' => 'INSUFFICIENT_CREW',
-            'message' => 'Two active CPL + C208_TYPE pilots are required to start this flight.',
-            'current_qualified_pilots' => count($pilots),
-            'required_qualified_pilots' => 2,
+            'message' => 'This aircraft cannot depart because there are not enough qualified active pilots.',
+            'required_pilots' => 2,
+            'available_pilots' => count($pilots),
+            'aircraft_model_code' => $aircraft['model_code'],
+            'icao_type_code' => $aircraft['icao_type_code'],
         ], 409);
     }
 
-    $technician = fetch_c208_technician($pdo, $companyId);
-    $columns = table_columns($pdo, 'scheduled_flight_instances');
-
-    $flightCode = next_flight_code($pdo, $companyId);
+    $technician = dispatch_fetch_best_technician($pdo, $companyId);
+    $flightCode = next_flight_instance_code($pdo, $companyId);
+    $durationMinutes = max(20, (int)($service['estimated_block_minutes'] ?? 60));
     $now = gmdate('Y-m-d H:i:s');
-    $date = gmdate('Y-m-d');
-    $durationMinutes = max(20, (int)$service['estimated_block_minutes']);
-    $arrival = gmdate('Y-m-d H:i:s', time() + $durationMinutes * 60);
+    $arrival = gmdate('Y-m-d H:i:s', time() + ($durationMinutes * 60));
 
-    $capacity = (int)$aircraft['passenger_capacity_standard'];
-    $ticket = (float)($service['base_ticket_price'] ?? 0);
-    $passengers = max(1, min($capacity, (int)floor($capacity * 0.75)));
-    $revenue = $passengers * $ticket;
+    $capacity = max(1, (int)($aircraft['passenger_capacity_standard'] ?? 1));
+    $passengerCount = min($capacity, max(1, (int)floor($capacity * 0.75)));
+    $ticketPrice = (float)($service['base_ticket_price'] ?? 0);
+    $revenue = $passengerCount * $ticketPrice;
     $blockHours = $durationMinutes / 60.0;
-    $fuelCost = (float)($aircraft['fuel_burn_kg_per_hour'] ?? 170) * $blockHours * 1.15;
-    $maintenanceCost = (float)($aircraft['maintenance_cost_per_hour'] ?? 350) * $blockHours;
-    $crewCost = crew_cost($pilots, $revenue, $blockHours);
-    $totalCost = $fuelCost + $maintenanceCost + $crewCost;
-    $profit = $revenue - $totalCost;
+    $fuelCost = $blockHours * (float)($aircraft['fuel_burn_kg_per_hour'] ?? 0) * 1.20;
+    $maintenanceCost = $blockHours * (float)($aircraft['maintenance_cost_per_hour'] ?? 0);
+    $staffCost = ((float)($pilots[0]['salary_per_flight'] ?? 0)) + ((float)($pilots[1]['salary_per_flight'] ?? 0));
+    $operatingCost = $fuelCost + $maintenanceCost + $staffCost;
+    $profit = $revenue - $operatingCost;
 
-    $v = [];
-    put($v, $columns, 'company_id', $companyId);
-    put($v, $columns, 'route_id', null);
-    put($v, $columns, 'air_route_id', (int)$service['air_route_id']);
-    put($v, $columns, 'scheduled_service_id', (int)$service['service_id']);
-    put($v, $columns, 'flight_code', $flightCode);
-    put($v, $columns, 'flight_operation_type', 'SCHEDULED');
-    put($v, $columns, 'flight_date_utc', $date);
-    put($v, $columns, 'aircraft_id', (int)$aircraft['aircraft_id']);
-    put($v, $columns, 'planned_aircraft_id', (int)$aircraft['aircraft_id']);
-    put($v, $columns, 'dispatch_aircraft_id', (int)$aircraft['aircraft_id']);
-    put($v, $columns, 'dispatch_status', 'ASSIGNED');
-    put($v, $columns, 'backup_used', 0);
-    put($v, $columns, 'schedule_conflict_status', 'NONE');
-    put($v, $columns, 'origin_airport_icao_code', $service['origin_airport_icao_code']);
-    put($v, $columns, 'destination_airport_icao_code', $service['destination_airport_icao_code']);
-    put($v, $columns, 'required_aircraft_class', $service['required_aircraft_class'] ?: 'LIGHT_COMMERCIAL');
-    put($v, $columns, 'preferred_aircraft_model_id', $service['preferred_aircraft_model_id']);
-    put($v, $columns, 'scheduled_departure_at_utc', $now);
-    put($v, $columns, 'scheduled_arrival_at_utc', $arrival);
-    put($v, $columns, 'actual_departure_at_utc', $now);
-    put($v, $columns, 'actual_arrival_at_utc', null);
-    put($v, $columns, 'planned_distance_km', $service['planned_distance_km']);
-    put($v, $columns, 'planned_duration_minutes', $durationMinutes);
-    put($v, $columns, 'status', 'IN_FLIGHT');
-    put($v, $columns, 'assigned_pilot_1_id', (int)$pilots[0]['id']);
-    put($v, $columns, 'assigned_pilot_2_id', (int)$pilots[1]['id']);
-    put($v, $columns, 'pilot_1_id', (int)$pilots[0]['id']);
-    put($v, $columns, 'pilot_2_id', (int)$pilots[1]['id']);
-    if ($technician) {
-        put($v, $columns, 'assigned_technician_id', (int)$technician['id']);
-        put($v, $columns, 'technician_id', (int)$technician['id']);
-    }
-    put($v, $columns, 'passenger_capacity', $capacity);
-    put($v, $columns, 'passenger_count', $passengers);
-    put($v, $columns, 'load_factor_percent', round(($passengers / max(1, $capacity)) * 100, 2));
-    put($v, $columns, 'ticket_price', money($ticket));
-    put($v, $columns, 'passenger_revenue', money($revenue));
-    put($v, $columns, 'fuel_cost', money($fuelCost));
-    put($v, $columns, 'maintenance_cost', money($maintenanceCost));
-    put($v, $columns, 'crew_cost', money($crewCost));
-    put($v, $columns, 'total_operating_cost', money($totalCost));
-    put($v, $columns, 'profit_amount', money($profit));
-    put($v, $columns, 'currency_code', $service['currency_code'] ?? 'EUR');
+    $columns = table_columns($pdo, 'scheduled_flight_instances');
+    $values = [];
+    put($values, $columns, 'company_id', $companyId);
+    put($values, $columns, 'scheduled_service_id', $serviceId);
+    put($values, $columns, 'flight_code', $flightCode);
+    put($values, $columns, 'flight_operation_type', $isOnDemand ? 'ON_DEMAND' : 'SCHEDULED');
+    put($values, $columns, 'status', 'IN_FLIGHT');
+    put($values, $columns, 'dispatch_status', $isOnDemand ? 'MANUAL_AIRCRAFT_SELECTED' : 'AUTO_SELECTED_PROFITABLE_AIRCRAFT');
+    put($values, $columns, 'backup_used', 0);
+    put($values, $columns, 'origin_airport_icao_code', $service['origin_airport_icao_code']);
+    put($values, $columns, 'destination_airport_icao_code', $service['destination_airport_icao_code']);
+    put($values, $columns, 'aircraft_id', (int)$aircraft['aircraft_id']);
+    put($values, $columns, 'pilot_1_staff_id', (int)$pilots[0]['staff_id']);
+    put($values, $columns, 'pilot_2_staff_id', (int)$pilots[1]['staff_id']);
+    put($values, $columns, 'technician_staff_id', $technician ? (int)$technician['staff_id'] : null);
+    put($values, $columns, 'passenger_count', $passengerCount);
+    put($values, $columns, 'passenger_revenue', number_format($revenue, 2, '.', ''));
+    put($values, $columns, 'fuel_cost', number_format($fuelCost, 2, '.', ''));
+    put($values, $columns, 'maintenance_cost', number_format($maintenanceCost, 2, '.', ''));
+    put($values, $columns, 'staff_cost', number_format($staffCost, 2, '.', ''));
+    put($values, $columns, 'total_operating_cost', number_format($operatingCost, 2, '.', ''));
+    put($values, $columns, 'profit_amount', number_format($profit, 2, '.', ''));
+    put($values, $columns, 'currency_code', $service['currency_code'] ?? 'EUR');
+    put($values, $columns, 'scheduled_departure_at_utc', $now);
+    put($values, $columns, 'actual_departure_at_utc', $now);
+    put($values, $columns, 'scheduled_arrival_at_utc', $arrival);
+    put($values, $columns, 'actual_arrival_at_utc', null);
 
-    $flightId = insert_dynamic($pdo, 'scheduled_flight_instances', $v);
+    $flightInstanceId = insert_dynamic($pdo, 'scheduled_flight_instances', $values);
 
-    $pdo->prepare("UPDATE company_aircraft SET status = 'IN_FLIGHT' WHERE id = :aircraft_id AND company_id = :company_id")
-        ->execute(['aircraft_id' => (int)$aircraft['aircraft_id'], 'company_id' => $companyId]);
+    $pdo->prepare("
+        UPDATE company_aircraft
+        SET status = 'IN_FLIGHT',
+            current_airport_icao_code = :destination
+        WHERE id = :aircraft_id AND company_id = :company_id
+    ")->execute([
+        'destination' => $service['destination_airport_icao_code'],
+        'aircraft_id' => (int)$aircraft['aircraft_id'],
+        'company_id' => $companyId,
+    ]);
 
     $pdo->commit();
 
     json_response([
         'status' => 'IN_FLIGHT',
-        'flight_id' => $flightId,
+        'flight_instance_id' => $flightInstanceId,
         'flight_code' => $flightCode,
-        'service_code' => $service['service_code'],
-        'route_code' => $service['route_code'],
+        'dispatch_status' => $isOnDemand ? 'MANUAL_AIRCRAFT_SELECTED' : 'AUTO_SELECTED_PROFITABLE_AIRCRAFT',
         'aircraft' => [
-            'id' => (int)$aircraft['aircraft_id'],
+            'company_aircraft_id' => (int)$aircraft['aircraft_id'],
             'registration_code' => $aircraft['registration_code'],
+            'model_code' => $aircraft['model_code'],
+            'icao_type_code' => $aircraft['icao_type_code'],
             'model_name' => $aircraft['model_name'],
         ],
         'crew' => [
@@ -167,119 +147,58 @@ try {
             'pilot_2' => $pilots[1]['display_name'],
             'technician' => $technician['display_name'] ?? null,
         ],
+        'estimated_profit' => number_format($profit, 2, '.', ''),
         'scheduled_arrival_at_utc' => $arrival,
-        'passenger_count' => $passengers,
-        'passenger_revenue' => money($revenue),
-        'estimated_profit' => money($profit),
-    ]);
-} catch (Throwable $e) {
-    if ($pdo->inTransaction()) $pdo->rollBack();
-    json_response(['error' => 'START_SERVICE_FLIGHT_FAILED', 'message' => $e->getMessage()], 500);
-}
-
-function fetch_service(PDO $pdo, int $companyId, int $serviceId): ?array {
-    $stmt = $pdo->prepare("
-        SELECT ss.id AS service_id, ss.company_id, ss.air_route_id, ss.service_code,
-               ss.preferred_aircraft_model_id, ss.required_aircraft_class, ss.compatible_aircraft_model_codes,
-               ss.base_ticket_price, ss.currency_code,
-               ar.route_code, ar.origin_airport_icao_code, ar.destination_airport_icao_code,
-               ar.planned_distance_km, ar.estimated_block_minutes
-        FROM scheduled_services ss
-        JOIN air_routes ar ON ar.id = ss.air_route_id
-        WHERE ss.company_id = :company_id AND ss.id = :service_id AND ss.service_status = 'ACTIVE'
-        LIMIT 1
-    ");
-    $stmt->execute(['company_id' => $companyId, 'service_id' => $serviceId]);
-    $row = $stmt->fetch();
-    return $row ?: null;
-}
-
-function fetch_c208_pilots(PDO $pdo, int $companyId): array {
-    $hourly = column_exists($pdo, 'company_staff', 'hourly_rate') ? "s.hourly_rate" : "0.00 AS hourly_rate";
-    $stmt = $pdo->prepare("
-        SELECT s.id, s.display_name, s.salary_per_flight, {$hourly}, s.revenue_share_percent
-        FROM company_staff s
-        WHERE s.company_id = :company_id AND s.staff_role = 'PILOT' AND s.employment_status = 'ACTIVE'
-          AND EXISTS (SELECT 1 FROM company_staff_licenses l WHERE l.company_staff_id = s.id AND l.license_code = 'CPL')
-          AND EXISTS (SELECT 1 FROM company_staff_licenses l WHERE l.company_staff_id = s.id AND l.license_code = 'C208_TYPE')
-        ORDER BY s.reliability_score DESC, s.fatigue_score ASC, s.id
-        LIMIT 2
-    ");
-    $stmt->execute(['company_id' => $companyId]);
-    return $stmt->fetchAll();
-}
-
-function fetch_c208_technician(PDO $pdo, int $companyId): ?array {
-    $stmt = $pdo->prepare("
-        SELECT s.id, s.display_name
-        FROM company_staff s
-        WHERE s.company_id = :company_id AND s.staff_role = 'TECHNICIAN' AND s.employment_status = 'ACTIVE'
-          AND EXISTS (SELECT 1 FROM company_staff_licenses l WHERE l.company_staff_id = s.id AND l.license_code = 'C208_MAINT')
-        ORDER BY s.reliability_score DESC, s.id
-        LIMIT 1
-    ");
-    $stmt->execute(['company_id' => $companyId]);
-    $row = $stmt->fetch();
-    return $row ?: null;
-}
-
-function crew_cost(array $pilots, float $revenue, float $blockHours): float {
-    $cost = 0.0;
-    foreach ($pilots as $p) {
-        $cost += (float)$p['salary_per_flight'];
-        $cost += (float)$p['hourly_rate'] * $blockHours;
-        $cost += $revenue * ((float)$p['revenue_share_percent'] / 100.0);
+    ], 201);
+} catch (Throwable $exception) {
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
     }
-    return $cost;
+    json_response(['error' => 'START_FLIGHT_FAILED', 'message' => $exception->getMessage()], 500);
 }
 
-function table_columns(PDO $pdo, string $tableName): array {
-    $stmt = $pdo->prepare("SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name");
-    $stmt->execute(['table_name' => $tableName]);
-    return array_flip(array_map(static fn($r) => $r['COLUMN_NAME'], $stmt->fetchAll()));
-}
-function column_exists(PDO $pdo, string $tableName, string $columnName): bool {
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name AND COLUMN_NAME = :column_name");
-    $stmt->execute(['table_name' => $tableName, 'column_name' => $columnName]);
-    return (int)$stmt->fetchColumn() > 0;
-}
-function put(array &$values, array $columns, string $column, mixed $value): void {
-    if (isset($columns[$column])) $values[$column] = $value;
-}
-function insert_dynamic(PDO $pdo, string $tableName, array $values): int {
-    $cols = array_keys($values);
-    $quoted = array_map(static fn($c) => "`{$c}`", $cols);
-    $ph = array_map(static fn($c) => ":{$c}", $cols);
-    $stmt = $pdo->prepare("INSERT INTO {$tableName} (" . implode(', ', $quoted) . ") VALUES (" . implode(', ', $ph) . ")");
-    foreach ($values as $c => $v) $stmt->bindValue(":{$c}", $v);
-    $stmt->execute();
-    return (int)$pdo->lastInsertId();
-}
-function next_flight_code(PDO $pdo, int $companyId): string {
+function next_flight_instance_code(PDO $pdo, int $companyId): string
+{
     $base = time();
-    $code = 'IO-' . $base;
-
+    $candidate = 'IO-' . $base;
+    $suffix = 0;
     $stmt = $pdo->prepare("
         SELECT COUNT(*)
         FROM scheduled_flight_instances
-        WHERE company_id = :company_id
-          AND flight_code = :flight_code
+        WHERE company_id = :company_id AND flight_code = :flight_code
     ");
-
-    $suffix = 0;
-
     while (true) {
-        $candidate = $suffix === 0 ? $code : $code . '-' . $suffix;
-        $stmt->execute([
-            'company_id' => $companyId,
-            'flight_code' => $candidate,
-        ]);
-
-        if ((int)$stmt->fetchColumn() === 0) {
-            return $candidate;
-        }
-
+        $code = $suffix === 0 ? $candidate : $candidate . '-' . $suffix;
+        $stmt->execute(['company_id' => $companyId, 'flight_code' => $code]);
+        if ((int)$stmt->fetchColumn() === 0) return $code;
         $suffix++;
     }
 }
-function money(float $v): string { return number_format($v, 2, '.', ''); }
+
+function table_columns(PDO $pdo, string $tableName): array
+{
+    $stmt = $pdo->prepare("
+        SELECT COLUMN_NAME
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name
+    ");
+    $stmt->execute(['table_name' => $tableName]);
+    return array_flip(array_map(static fn ($row) => $row['COLUMN_NAME'], $stmt->fetchAll()));
+}
+
+function put(array &$values, array $columns, string $column, mixed $value): void
+{
+    if (isset($columns[$column])) $values[$column] = $value;
+}
+
+function insert_dynamic(PDO $pdo, string $tableName, array $values): int
+{
+    $columns = array_keys($values);
+    $quoted = array_map(static fn ($column) => "`{$column}`", $columns);
+    $placeholders = array_map(static fn ($column) => ":{$column}", $columns);
+    $sql = "INSERT INTO {$tableName} (" . implode(', ', $quoted) . ") VALUES (" . implode(', ', $placeholders) . ")";
+    $stmt = $pdo->prepare($sql);
+    foreach ($values as $column => $value) $stmt->bindValue(":{$column}", $value);
+    $stmt->execute();
+    return (int)$pdo->lastInsertId();
+}

@@ -105,3 +105,28 @@ dialog{width:min(980px,calc(100vw - 28px));border:1px solid var(--line);border-r
   margin: 10px 0 16px;
   background: rgba(255,255,255,.05);
 }
+
+/* Global large dialogs for create/detail workflows */
+dialog .dialog-card,
+dialog .wide-dialog {
+  width: 90vw !important;
+  max-width: 90vw !important;
+  height: 90vh !important;
+  max-height: 90vh !important;
+  display: flex;
+  flex-direction: column;
+}
+dialog .dialog-body { flex: 1; overflow: auto; }
+dialog::backdrop { background: rgba(0, 0, 0, .62); }
+.aircraft-choice-list { display: grid; gap: 10px; margin-top: 14px; }
+.aircraft-choice-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 14px;
+  background: rgba(255,255,255,.05);
+}
+.aircraft-choice-row input { margin-top: 4px; }
+.aircraft-choice-row strong, .aircraft-choice-row small { display: block; }
