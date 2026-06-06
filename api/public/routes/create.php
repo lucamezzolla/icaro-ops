@@ -14,12 +14,12 @@ $payload = read_json_body();
 
 $origin = strtoupper(trim((string)($payload['origin_airport_icao_code'] ?? '')));
 $destination = strtoupper(trim((string)($payload['destination_airport_icao_code'] ?? '')));
-$serviceType = strtoupper(trim((string)($payload['service_type'] ?? 'SCHEDULED')));
+$serviceType = strtoupper(trim((string)($payload['service_type'] ?? $payload['flight_type'] ?? 'ON_DEMAND')));
 $departure = trim((string)($payload['scheduled_departure_time_utc'] ?? ''));
 $ticketPrice = (float)($payload['ticket_price'] ?? $payload['base_ticket_price'] ?? 0);
 
 if (!in_array($serviceType, ['SCHEDULED', 'ON_DEMAND'], true)) {
-    json_response(['error' => 'INVALID_SERVICE_TYPE'], 422);
+    json_response(['error' => 'INVALID_FLIGHT_TYPE'], 422);
 }
 
 if (!preg_match('/^[A-Z0-9]{4}$/', $origin) || !preg_match('/^[A-Z0-9]{4}$/', $destination)) {
@@ -39,6 +39,11 @@ if ($serviceType === 'SCHEDULED') {
         $departure .= ':00';
     }
 } else {
+    /*
+     * Critical rule:
+     * ON_DEMAND flights/routes must never be interpreted as scheduled,
+     * even if the UI accidentally sends a stale time value such as 10:00.
+     */
     $departure = null;
 }
 
@@ -169,7 +174,7 @@ try {
         : 'ONDEMAND';
 
     $serviceCode = sprintf(
-        'SV-C%03d-%s-%s-%s',
+        'FL-C%03d-%s-%s-%s',
         $companyId,
         $origin,
         $destination,
@@ -203,7 +208,7 @@ try {
 
     if ($existingService->fetchColumn()) {
         $pdo->rollBack();
-        json_response(['error' => 'SERVICE_ALREADY_EXISTS'], 409);
+        json_response(['error' => 'FLIGHT_ROUTE_ALREADY_EXISTS'], 409);
     }
 
     $columns = table_columns($pdo, 'scheduled_services');
@@ -230,11 +235,12 @@ try {
     $pdo->commit();
 
     json_response([
-        'status' => 'SERVICE_CREATED',
+        'status' => 'FLIGHT_ROUTE_CREATED',
         'message' => $serviceType === 'SCHEDULED'
-            ? 'Scheduled service created over an abstract air route.'
-            : 'On-demand service created over an abstract air route.',
+            ? 'Scheduled flight route created over an abstract air route.'
+            : 'On-demand flight route created over an abstract air route.',
         'service_type' => $serviceType,
+        'scheduled_departure_time_utc' => $departure,
         'air_route_id' => (int)$airRouteId,
         'service_id' => $serviceId,
         'route_code' => $routeCode,
@@ -247,8 +253,8 @@ try {
     }
 
     json_response([
-        'error' => 'SERVICE_CREATE_FAILED',
-        'message' => 'Unable to create service.',
+        'error' => 'FLIGHT_ROUTE_CREATE_FAILED',
+        'message' => 'Unable to create flight route.',
     ], 500);
 }
 

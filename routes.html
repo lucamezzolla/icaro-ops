@@ -44,7 +44,7 @@
       <section class="page-header">
         <div>
           <p class="eyebrow">Operations</p>
-          <h1>Flights over Air Routes</h1>
+          <h1>Flights</h1>
           <p>Manage scheduled flights separately from abstract routes and real flight instances.</p>
         </div>
         <button id="addRouteButton" type="button">Add flight</button>
@@ -110,14 +110,14 @@
           <label>
             Service type
             <select id="flightType" name="flight_type">
-              <option value="SCHEDULED" selected>Scheduled</option>
-              <option value="ON_DEMAND">On demand / non-scheduled</option>
+              <option value="SCHEDULED">Scheduled</option>
+              <option value="ON_DEMAND" selected>On demand / non-scheduled</option>
             </select>
           </label>
 
           <label>
             Scheduled departure UTC
-            <input id="scheduledTime" name="scheduled_departure_time_utc" type="time" required value="10:00">
+            <input id="scheduledTime" name="scheduled_departure_time_utc" type="time" required value="" disabled>
           </label>
 
           <label>

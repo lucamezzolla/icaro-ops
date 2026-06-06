@@ -50,7 +50,7 @@ function renderRoutes(rows) {
   const tbody = document.querySelector("#routesTableBody");
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="5">No flight routes yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">No flights yet.</td></tr>`;
     return;
   }
 
@@ -89,7 +89,7 @@ function renderRoutes(rows) {
 async function startServiceFlight(serviceId) {
   hideError();
 
-  if (!confirm("Create and start a real flight instance for this flight route now?")) {
+  if (!confirm("Create and start a real flight instance for this flight now?")) {
     return;
   }
 
@@ -146,21 +146,31 @@ function openAddRouteDialog() {
   const dialog = document.querySelector("#routeDialog");
 
   if (!dialog) {
-    showError("Service dialog not found.");
+    showError("Flight dialog not found.");
     return;
   }
 
   document.querySelector("#originAirport").value = "";
   document.querySelector("#destinationAirport").value = "";
-  if (document.querySelector("#serviceType")) {
-    document.querySelector("#serviceType").value = "SCHEDULED";
+
+  const serviceType = document.querySelector("#serviceType");
+  const scheduledTime = document.querySelector("#scheduledTime");
+
+  if (serviceType) {
+    serviceType.value = "ON_DEMAND";
   }
-  document.querySelector("#scheduledTime").value = "10:00";
-  document.querySelector("#scheduledTime").disabled = false;
+
+  if (scheduledTime) {
+    scheduledTime.value = "";
+    scheduledTime.disabled = true;
+    scheduledTime.required = false;
+  }
+
   document.querySelector("#ticketPrice").value = "0.00";
   document.querySelector("#routePreviewPanel").hidden = true;
   document.querySelector("#routeDialogError").hidden = true;
 
+  setupServiceTypeToggle();
   dialog.showModal();
 }
 
@@ -211,16 +221,22 @@ async function saveRoute(event) {
     await loadRoutes();
   } catch (err) {
     error.hidden = false;
-    error.textContent = err.message || "Unable to create flight route.";
+    error.textContent = err.message || "Unable to create flight.";
   }
 }
 
 function routeFormPayload() {
+  const serviceType = document.querySelector("#serviceType")?.value || "ON_DEMAND";
+  const scheduledTime = serviceType === "SCHEDULED"
+    ? document.querySelector("#scheduledTime").value
+    : "";
+
   return {
+    service_type: serviceType,
+    flight_type: serviceType,
     origin_airport_icao_code: document.querySelector("#originAirport").value.trim().toUpperCase(),
     destination_airport_icao_code: document.querySelector("#destinationAirport").value.trim().toUpperCase(),
-    service_type: document.querySelector("#serviceType")?.value || "SCHEDULED",
-    scheduled_departure_time_utc: document.querySelector("#scheduledTime").value,
+    scheduled_departure_time_utc: scheduledTime,
     ticket_price: Number(document.querySelector("#ticketPrice").value)
   };
 }
@@ -235,7 +251,7 @@ function renderPreview(p) {
         ["Block hours", `${p.block_hours || "-"} h`],
         ["Route layer", "Abstract air route, no aircraft or crew assigned permanently"]
       ])}
-      ${section("Flight route", [
+      ${section("Flight", [
         ["Service type", "Daily scheduled passenger service"],
         ["Required aircraft class", "LIGHT_COMMERCIAL"],
         ["Airplanes", `${p.aircraft.manufacturer} ${p.aircraft.model_name}`],
@@ -264,7 +280,7 @@ async function openRouteDetail(serviceId) {
   const title = document.querySelector("#routeDetailTitle");
   const content = document.querySelector("#routeDetailContent");
 
-  title.textContent = "Flight route";
+  title.textContent = "Flight";
   content.textContent = "Loading...";
   dialog.showModal();
 
@@ -287,7 +303,7 @@ async function openRouteDetail(serviceId) {
           ["Distance", `${s.planned_distance_km} km`],
           ["Estimated block", `${s.estimated_block_minutes} min`]
         ])}
-        ${section("Flight route", [
+        ${section("Flight", [
           ["Service code", s.service_code],
           ["Recurrence", s.recurrence_type],
           ["Scheduled", serviceScheduleLabel(s)],
@@ -314,7 +330,7 @@ async function openRouteDetail(serviceId) {
         </section>
       </div>
       <div class="dialog-action-bar">
-        <button type="button" class="danger" id="removeServiceButton">Remove flight route</button>
+        <button type="button" class="danger" id="removeServiceButton">Remove flight</button>
       </div>
     `;
 
@@ -396,7 +412,7 @@ function ensureAircraftModelDialog() {
 }
 
 async function removeService(serviceId) {
-  if (!confirm("Remove this flight route? Existing completed flight history will remain, but the flight route will be cancelled.")) {
+  if (!confirm("Remove this flight? Existing completed flight history will remain, but the flight will be cancelled.")) {
     return;
   }
 
@@ -405,7 +421,7 @@ async function removeService(serviceId) {
     document.querySelector("#routeDetailDialog")?.close();
     await loadRoutes();
   } catch (error) {
-    alert(error.message || "Unable to remove flight route.");
+    alert(error.message || "Unable to remove flight.");
   }
 }
 
@@ -414,11 +430,9 @@ function setupServiceTypeToggle() {
   const serviceType = document.querySelector("#serviceType");
   const scheduledTime = document.querySelector("#scheduledTime");
 
-  if (!serviceType || !scheduledTime || serviceType.dataset.bound) {
+  if (!serviceType || !scheduledTime) {
     return;
   }
-
-  serviceType.dataset.bound = "true";
 
   const refresh = () => {
     const isScheduled = serviceType.value === "SCHEDULED";
@@ -432,7 +446,11 @@ function setupServiceTypeToggle() {
     }
   };
 
-  serviceType.addEventListener("change", refresh);
+  if (!serviceType.dataset.bound) {
+    serviceType.dataset.bound = "true";
+    serviceType.addEventListener("change", refresh);
+  }
+
   refresh();
 }
 
