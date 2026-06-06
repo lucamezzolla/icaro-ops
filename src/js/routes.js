@@ -19,6 +19,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.querySelector("#saveRouteButton")?.addEventListener("click", saveRoute);
   setupTicketSuggestion();
   setupServiceTypeToggle();
+  setupDialogCloseButtons();
   await loadRoutes();
 });
 
@@ -49,7 +50,7 @@ function renderRoutes(rows) {
   const tbody = document.querySelector("#routesTableBody");
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="5">No scheduled services yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">No flight routes yet.</td></tr>`;
     return;
   }
 
@@ -65,7 +66,7 @@ function renderRoutes(rows) {
       <td>
         <div class="button-row">
           <button type="button" data-service-detail="${service.service_id}">Details</button>
-          <button type="button" data-start-service="${service.service_id}" class="secondary">Start flight now</button>
+          ${isOnDemandService(service) ? `<button type="button" data-start-service="${service.service_id}" class="secondary">Start flight now</button>` : ""}
         </div>
       </td>
     </tr>
@@ -88,7 +89,7 @@ function renderRoutes(rows) {
 async function startServiceFlight(serviceId) {
   hideError();
 
-  if (!confirm("Create and start a real flight instance for this scheduled service now?")) {
+  if (!confirm("Create and start a real flight instance for this flight route now?")) {
     return;
   }
 
@@ -109,6 +110,12 @@ async function startServiceFlight(serviceId) {
 }
 
 
+
+
+function isOnDemandService(service) {
+  const type = service.service_type || (service.scheduled_departure_time_utc ? "SCHEDULED" : "ON_DEMAND");
+  return type === "ON_DEMAND";
+}
 
 function serviceScheduleLabel(service) {
   const type = service.service_type || (service.scheduled_departure_time_utc ? "SCHEDULED" : "ON_DEMAND");
@@ -204,7 +211,7 @@ async function saveRoute(event) {
     await loadRoutes();
   } catch (err) {
     error.hidden = false;
-    error.textContent = err.message || "Unable to create scheduled service.";
+    error.textContent = err.message || "Unable to create flight route.";
   }
 }
 
@@ -228,7 +235,7 @@ function renderPreview(p) {
         ["Block hours", `${p.block_hours || "-"} h`],
         ["Route layer", "Abstract air route, no aircraft or crew assigned permanently"]
       ])}
-      ${section("Scheduled service", [
+      ${section("Flight route", [
         ["Service type", "Daily scheduled passenger service"],
         ["Required aircraft class", "LIGHT_COMMERCIAL"],
         ["Airplanes", `${p.aircraft.manufacturer} ${p.aircraft.model_name}`],
@@ -257,7 +264,7 @@ async function openRouteDetail(serviceId) {
   const title = document.querySelector("#routeDetailTitle");
   const content = document.querySelector("#routeDetailContent");
 
-  title.textContent = "Scheduled service";
+  title.textContent = "Flight route";
   content.textContent = "Loading...";
   dialog.showModal();
 
@@ -280,7 +287,7 @@ async function openRouteDetail(serviceId) {
           ["Distance", `${s.planned_distance_km} km`],
           ["Estimated block", `${s.estimated_block_minutes} min`]
         ])}
-        ${section("Scheduled service", [
+        ${section("Flight route", [
           ["Service code", s.service_code],
           ["Recurrence", s.recurrence_type],
           ["Scheduled", serviceScheduleLabel(s)],
@@ -307,7 +314,7 @@ async function openRouteDetail(serviceId) {
         </section>
       </div>
       <div class="dialog-action-bar">
-        <button type="button" class="danger" id="removeServiceButton">Remove service</button>
+        <button type="button" class="danger" id="removeServiceButton">Remove flight route</button>
       </div>
     `;
 
@@ -384,11 +391,12 @@ function ensureAircraftModelDialog() {
     </form>
   `;
   document.body.appendChild(dialog);
+  setupDialogCloseButtons();
   return dialog;
 }
 
 async function removeService(serviceId) {
-  if (!confirm("Remove this service? Existing completed flight history will remain, but the service will be cancelled.")) {
+  if (!confirm("Remove this flight route? Existing completed flight history will remain, but the flight route will be cancelled.")) {
     return;
   }
 
@@ -397,7 +405,7 @@ async function removeService(serviceId) {
     document.querySelector("#routeDetailDialog")?.close();
     await loadRoutes();
   } catch (error) {
-    alert(error.message || "Unable to remove service.");
+    alert(error.message || "Unable to remove flight route.");
   }
 }
 
@@ -495,3 +503,21 @@ function money(value) { return Number(value || 0).toLocaleString("en-US", { mini
 function showError(message) { const e = document.querySelector("#pageError"); e.hidden = false; e.textContent = message; }
 function hideError() { const e = document.querySelector("#pageError"); e.hidden = true; e.textContent = ""; }
 function escapeHtml(value) { return String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
+
+
+function setupDialogCloseButtons() {
+  document.querySelectorAll("dialog .close-button, dialog [data-dialog-close]").forEach(button => {
+    if (button.dataset.closeBound) {
+      return;
+    }
+
+    button.dataset.closeBound = "true";
+    button.setAttribute("type", "button");
+
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      button.closest("dialog")?.close();
+    });
+  });
+}
+

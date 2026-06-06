@@ -11,6 +11,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $session = require_auth_session();
 $companyId = (int)$session['company_id'];
 $payload = read_json_body();
+
 $serviceId = (int)($payload['service_id'] ?? $payload['route_id'] ?? 0);
 
 if ($serviceId <= 0) {
@@ -27,10 +28,15 @@ try {
         FROM scheduled_services
         WHERE id = :service_id
           AND company_id = :company_id
+          AND service_status <> 'CANCELLED'
         LIMIT 1
         FOR UPDATE
     ");
-    $stmt->execute(['service_id' => $serviceId, 'company_id' => $companyId]);
+    $stmt->execute([
+        'service_id' => $serviceId,
+        'company_id' => $companyId,
+    ]);
+
     $service = $stmt->fetch();
 
     if (!$service) {
@@ -45,13 +51,16 @@ try {
           AND scheduled_service_id = :service_id
           AND status IN ('SCHEDULED', 'BOARDING', 'IN_FLIGHT', 'DELAYED')
     ");
-    $activeFlights->execute(['company_id' => $companyId, 'service_id' => $serviceId]);
+    $activeFlights->execute([
+        'company_id' => $companyId,
+        'service_id' => $serviceId,
+    ]);
 
     if ((int)$activeFlights->fetchColumn() > 0) {
         $pdo->rollBack();
         json_response([
             'error' => 'SERVICE_HAS_ACTIVE_FLIGHTS',
-            'message' => 'This service has active or pending flights and cannot be removed now.',
+            'message' => 'This flight route has active or pending flight instances and cannot be removed now.',
         ], 409);
     }
 
@@ -60,7 +69,10 @@ try {
         SET service_status = 'CANCELLED'
         WHERE id = :service_id
           AND company_id = :company_id
-    ")->execute(['service_id' => $serviceId, 'company_id' => $companyId]);
+    ")->execute([
+        'service_id' => $serviceId,
+        'company_id' => $companyId,
+    ]);
 
     $pdo->commit();
 
@@ -68,7 +80,7 @@ try {
         'status' => 'REMOVED',
         'service_id' => $serviceId,
         'service_code' => $service['service_code'],
-        'message' => 'Service removed.',
+        'message' => 'Flight route removed.',
     ]);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) {
@@ -77,6 +89,6 @@ try {
 
     json_response([
         'error' => 'SERVICE_REMOVE_FAILED',
-        'message' => 'Unable to remove service.',
+        'message' => 'Unable to remove flight route.',
     ], 500);
 }

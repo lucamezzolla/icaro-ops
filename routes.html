@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Icaro Ops - Services</title>
+  <title>Icaro Ops - Flights</title>
   <link rel="stylesheet" href="src/css/routes.css">
 </head>
 <body>
@@ -11,17 +11,17 @@
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark">IO</div>
-        <div><strong>Icaro Ops</strong><span>Services</span></div>
+        <div><strong>Icaro Ops</strong><span>Flights</span></div>
       </div>
 
       <section class="panel">
-        <h2>Services</h2>
-        <p class="muted">Scheduled services are commercial offers over abstract air routes. Real flights are generated later and dispatched with compatible aircraft.</p>
+        <h2>Flights</h2>
+        <p class="muted">Scheduled flights are commercial offers over abstract air routes. Real flights are generated later and dispatched with compatible aircraft.</p>
       </section>
 
       <section class="panel">
         <dl id="routesSummary" class="summary-list">
-          <div><dt>Services</dt><dd>Loading...</dd></div>
+          <div><dt>Flights</dt><dd>Loading...</dd></div>
         </dl>
       </section>
     </aside>
@@ -32,7 +32,7 @@
           <a href="index.html">Map</a>
           <a href="fleet.html">Fleet</a>
           <a href="staff.html">Staff</a>
-          <a href="routes.html" class="active">Services</a>
+          <a href="routes.html" class="active">Flights</a>
           <a href="flight-log.html">Flight Log</a>
           <a href="mailbox.html">Mailbox</a>
           <a href="#">Finance</a>
@@ -44,10 +44,10 @@
       <section class="page-header">
         <div>
           <p class="eyebrow">Operations</p>
-          <h1>Services over Air Routes</h1>
-          <p>Manage scheduled services separately from abstract routes and real flight instances.</p>
+          <h1>Flights over Air Routes</h1>
+          <p>Manage scheduled flights separately from abstract routes and real flight instances.</p>
         </div>
-        <button id="addRouteButton" type="button">Add service</button>
+        <button id="addRouteButton" type="button">Add flight</button>
       </section>
 
       <div id="pageError" class="page-error" hidden></div>
@@ -56,8 +56,8 @@
         <article class="card">
           <div class="card-header">
             <div>
-              <h2>Scheduled services</h2>
-              <p>A service is not a flight. Details show air route, service policy and generated flight instances.</p>
+              <h2>Scheduled flights</h2>
+              <p>A flight is not a flight. Details show air route, flight policy and generated flight instances.</p>
             </div>
             <button id="refreshButton" type="button">Refresh</button>
           </div>
@@ -66,7 +66,7 @@
             <table>
               <thead>
                 <tr>
-                  <th>Service / Air route</th>
+                  <th>Flight / Air route</th>
                   <th>Route</th>
                   <th>Scheduled</th>
                   <th>Airplanes</th>
@@ -88,9 +88,9 @@
       <header class="dialog-header">
         <div>
           <p class="eyebrow">Route</p>
-          <h2 id="routeDialogTitle">Add scheduled service</h2>
+          <h2 id="routeDialogTitle">Add scheduled flight</h2>
         </div>
-        <button value="close" class="close-button" aria-label="Close">×</button>
+        <button type="button" value="close" class="close-button" aria-label="Close">×</button>
       </header>
 
       <div class="dialog-body">
@@ -109,7 +109,7 @@
 
           <label>
             Service type
-            <select id="serviceType" name="service_type">
+            <select id="flightType" name="flight_type">
               <option value="SCHEDULED" selected>Scheduled</option>
               <option value="ON_DEMAND">On demand / non-scheduled</option>
             </select>
@@ -145,9 +145,9 @@
       <header class="dialog-header">
         <div>
           <p class="eyebrow">Route details</p>
-          <h2 id="routeDetailTitle">Scheduled service</h2>
+          <h2 id="routeDetailTitle">Scheduled flight</h2>
         </div>
-        <button value="close" class="close-button" aria-label="Close">×</button>
+        <button type="button" value="close" class="close-button" aria-label="Close">×</button>
       </header>
 
       <div id="routeDetailContent" class="dialog-body">Loading...</div>

@@ -79,6 +79,7 @@ $stmt = $pdo->prepare("
     LEFT JOIN aircraft_models am
       ON am.id = ss.preferred_aircraft_model_id
     WHERE ss.company_id = :company_id
+      AND ss.service_status <> 'CANCELLED'
     ORDER BY
       CASE
         WHEN ss.scheduled_departure_time_utc IS NULL THEN '99:99:99'
