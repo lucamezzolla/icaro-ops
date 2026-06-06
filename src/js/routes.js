@@ -3,7 +3,9 @@ const API = {
   create: "api/public/routes/create.php",
   detail: id => `api/public/routes/detail.php?serviceId=${encodeURIComponent(id)}`,
   preview: "api/public/routes/preview.php",
-  startServiceFlight: "api/public/flights/start-service-now.php"
+  startServiceFlight: "api/public/flights/start-service-now.php",
+  removeService: "api/public/routes/delete.php",
+  aircraftByIcao: code => `api/public/fleet/model-by-icao.php?icao=${encodeURIComponent(code)}`
 };
 
 let services = [];
@@ -47,7 +49,7 @@ function renderRoutes(rows) {
   const tbody = document.querySelector("#routesTableBody");
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="6">No scheduled services yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">No scheduled services yet.</td></tr>`;
     return;
   }
 
@@ -59,8 +61,7 @@ function renderRoutes(rows) {
       </td>
       <td>${escapeHtml(service.origin_airport_icao_code)} → ${escapeHtml(service.destination_airport_icao_code)}</td>
       <td>${serviceScheduleLabel(service)}</td>
-      <td>${modelCodesLabel(service)}</td>
-      <td>${money(service.ticket_price)} ${escapeHtml(service.currency_code || "")}</td>
+      <td>${airplanesLinks(service)}</td>
       <td>
         <div class="button-row">
           <button type="button" data-service-detail="${service.service_id}">Details</button>
@@ -76,6 +77,10 @@ function renderRoutes(rows) {
 
   tbody.querySelectorAll("[data-start-service]").forEach(button => {
     button.addEventListener("click", () => startServiceFlight(Number(button.dataset.startService)));
+  });
+
+  tbody.querySelectorAll("[data-airplane-icao]").forEach(button => {
+    button.addEventListener("click", () => openAircraftModelDialog(button.dataset.airplaneIcao));
   });
 }
 
@@ -109,18 +114,24 @@ function serviceScheduleLabel(service) {
   const type = service.service_type || (service.scheduled_departure_time_utc ? "SCHEDULED" : "ON_DEMAND");
 
   if (type === "ON_DEMAND") {
-    return "On demand";
+    return "Not scheduled";
   }
 
-  return service.scheduled_departure_time_utc || "-";
+  const raw = service.scheduled_departure_time_utc || "";
+  return raw.length >= 5 ? raw.slice(0, 5) : "-";
 }
 
 function modelCodesLabel(service) {
-  return escapeHtml(
-    service.compatible_aircraft_icao_codes || service.compatible_aircraft_icao_codes || service.compatible_aircraft_model_codes ||
-    service.model_code ||
-    "C208B_GRAND_CARAVAN_EX"
-  );
+  return escapeHtml(service.compatible_aircraft_icao_codes || service.icao_type_code || "C208");
+}
+
+function airplanesLinks(service) {
+  const raw = service.compatible_aircraft_icao_codes || service.icao_type_code || "C208";
+  const codes = String(raw).split(",").map(code => code.trim()).filter(Boolean);
+
+  return codes.map(code => `
+    <button type="button" class="link-button airplane-code-link" data-airplane-icao="${escapeHtml(code)}">${escapeHtml(code)}</button>
+  `).join(" ");
 }
 
 
@@ -274,7 +285,7 @@ async function openRouteDetail(serviceId) {
           ["Recurrence", s.recurrence_type],
           ["Scheduled", serviceScheduleLabel(s)],
           ["Service type", s.service_type || "-"],
-          ["Compatible models", s.compatible_aircraft_icao_codes || s.compatible_aircraft_model_codes || s.icao_type_code || s.model_code || "-"],
+          ["Airplanes", s.compatible_aircraft_icao_codes || s.compatible_aircraft_model_codes || s.icao_type_code || s.model_code || "-"],
           ["Airplanes", `${s.manufacturer || "-"} ${s.model_name || ""}`],
           ["Base ticket", `${money(s.base_ticket_price)} ${s.currency_code}`]
         ])}
@@ -295,9 +306,98 @@ async function openRouteDetail(serviceId) {
           }
         </section>
       </div>
+      <div class="dialog-action-bar">
+        <button type="button" class="danger" id="removeServiceButton">Remove service</button>
+      </div>
     `;
+
+    const removeButton = content.querySelector("#removeServiceButton");
+    if (removeButton) {
+      removeButton.addEventListener("click", () => removeService(Number(s.id || s.service_id)));
+    }
   } catch (error) {
     content.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load service detail.")}</div>`;
+  }
+}
+
+
+
+async function openAircraftModelDialog(icaoCode) {
+  const dialog = document.querySelector("#aircraftModelDialog") || ensureAircraftModelDialog();
+  const title = dialog.querySelector("#aircraftModelTitle");
+  const content = dialog.querySelector("#aircraftModelContent");
+
+  title.textContent = `Aircraft ${icaoCode}`;
+  content.textContent = "Loading...";
+  dialog.showModal();
+
+  try {
+    const data = await getJson(API.aircraftByIcao(icaoCode));
+    const m = data.model;
+
+    title.textContent = `${m.icao_type_code} · ${m.manufacturer} ${m.model_name}`;
+    content.innerHTML = `
+      <div class="model-image-wrap">
+        ${m.image_asset_path ? `<img src="${escapeHtml(m.image_asset_path)}" alt="${escapeHtml(m.manufacturer)} ${escapeHtml(m.model_name)}">` : `<p class="muted">No image available.</p>`}
+      </div>
+      <div class="detail-grid">
+        ${section("Identity", [
+          ["ICAO type", m.icao_type_code],
+          ["Manufacturer", m.manufacturer],
+          ["Model", m.model_name],
+          ["Internal model code", m.model_code],
+          ["Operation role", m.operation_role]
+        ])}
+        ${section("Performance", [
+          ["Passengers", m.passenger_capacity_standard],
+          ["Range", `${m.range_km ?? "-"} km`],
+          ["Cruise speed", `${m.cruise_speed_kmh ?? "-"} km/h`],
+          ["Fuel burn", `${m.fuel_burn_kg_per_hour ?? "-"} kg/h`],
+          ["Maintenance cost/h", `${money(m.maintenance_cost_per_hour || 0)}`]
+        ])}
+        ${section("Economics", [
+          ["Indicative new price", `${money(m.new_purchase_price || 0)}`]
+        ])}
+      </div>
+    `;
+  } catch (error) {
+    content.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load aircraft model.")}</div>`;
+  }
+}
+
+function ensureAircraftModelDialog() {
+  const dialog = document.createElement("dialog");
+  dialog.id = "aircraftModelDialog";
+  dialog.innerHTML = `
+    <form method="dialog" class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">Generic airplane model</p>
+          <h2 id="aircraftModelTitle">Aircraft</h2>
+        </div>
+        <button value="close" class="close-button" aria-label="Close">×</button>
+      </header>
+      <div id="aircraftModelContent" class="dialog-body">Loading...</div>
+      <footer class="dialog-footer">
+        <button value="close">Close</button>
+      </footer>
+    </form>
+  `;
+  document.body.appendChild(dialog);
+  return dialog;
+}
+
+async function removeService(serviceId) {
+  if (!confirm("Remove this service? Existing completed flight history will remain, but the service will be cancelled.")) {
+    return;
+  }
+
+  try {
+    await postJson(API.removeService, { service_id: serviceId });
+    document.querySelector("#routeDetailDialog")?.close();
+    await loadRoutes();
+  } catch (error) {
+    alert(error.message || "Unable to remove service.");
   }
 }
 

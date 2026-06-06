@@ -25,3 +25,45 @@ dialog{width:min(960px,calc(100vw - 28px));border:1px solid var(--line);border-r
   font-weight: 500;
   line-height: 1.35;
 }
+
+.link-button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  padding: 0;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  color: var(--text);
+}
+
+.airplane-code-link {
+  margin-right: 8px;
+}
+
+.dialog-action-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.model-image-wrap {
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 18px;
+  background: rgba(255,255,255,.05);
+  padding: 14px;
+}
+
+.model-image-wrap img {
+  max-width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border-radius: 14px;
+}

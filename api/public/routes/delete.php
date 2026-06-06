@@ -9,13 +9,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $session = require_auth_session();
-$companyId = $session['company_id'];
+$companyId = (int)$session['company_id'];
 $payload = read_json_body();
+$serviceId = (int)($payload['service_id'] ?? $payload['route_id'] ?? 0);
 
-$routeId = (int)($payload['route_id'] ?? 0);
-
-if ($routeId <= 0) {
-    json_response(['error' => 'VALIDATION_ERROR', 'message' => 'route_id is required.'], 422);
+if ($serviceId <= 0) {
+    json_response(['error' => 'INVALID_SERVICE_ID'], 422);
 }
 
 $pdo = db();
@@ -23,92 +22,61 @@ $pdo = db();
 try {
     $pdo->beginTransaction();
 
-    $routeStmt = $pdo->prepare("
-        SELECT id, origin_airport_icao_code, destination_airport_icao_code
-        FROM company_routes
-        WHERE id = :route_id
+    $stmt = $pdo->prepare("
+        SELECT id, service_code
+        FROM scheduled_services
+        WHERE id = :service_id
           AND company_id = :company_id
         LIMIT 1
         FOR UPDATE
     ");
-    $routeStmt->execute([
-        'route_id' => $routeId,
-        'company_id' => $companyId,
-    ]);
+    $stmt->execute(['service_id' => $serviceId, 'company_id' => $companyId]);
+    $service = $stmt->fetch();
 
-    $route = $routeStmt->fetch();
-
-    if (!$route) {
+    if (!$service) {
         $pdo->rollBack();
-        json_response(['error' => 'ROUTE_NOT_FOUND'], 404);
+        json_response(['error' => 'SERVICE_NOT_FOUND'], 404);
     }
 
-    $activeStmt = $pdo->prepare("
+    $activeFlights = $pdo->prepare("
         SELECT COUNT(*)
         FROM scheduled_flight_instances
-        WHERE route_id = :route_id
-          AND status IN ('SCHEDULED', 'IN_FLIGHT')
+        WHERE company_id = :company_id
+          AND scheduled_service_id = :service_id
+          AND status IN ('SCHEDULED', 'BOARDING', 'IN_FLIGHT', 'DELAYED')
     ");
-    $activeStmt->execute(['route_id' => $routeId]);
+    $activeFlights->execute(['company_id' => $companyId, 'service_id' => $serviceId]);
 
-    if ((int)$activeStmt->fetchColumn() > 0) {
+    if ((int)$activeFlights->fetchColumn() > 0) {
         $pdo->rollBack();
         json_response([
-            'error' => 'ROUTE_HAS_ACTIVE_FLIGHTS',
-            'message' => 'This route has active/scheduled flights. Complete them before deleting the route.',
+            'error' => 'SERVICE_HAS_ACTIVE_FLIGHTS',
+            'message' => 'This service has active or pending flights and cannot be removed now.',
         ], 409);
     }
 
-    $historyStmt = $pdo->prepare("
-        SELECT COUNT(*)
-        FROM scheduled_flight_instances
-        WHERE route_id = :route_id
-    ");
-    $historyStmt->execute(['route_id' => $routeId]);
-    $hasHistory = (int)$historyStmt->fetchColumn() > 0;
-
-    if ($hasHistory) {
-        $stmt = $pdo->prepare("
-            UPDATE company_routes
-            SET
-              status = 'CANCELLED',
-              auto_dispatch_enabled = FALSE,
-              updated_at_utc = CURRENT_TIMESTAMP
-            WHERE id = :route_id
-              AND company_id = :company_id
-        ");
-        $stmt->execute([
-            'route_id' => $routeId,
-            'company_id' => $companyId,
-        ]);
-
-        $action = 'CANCELLED';
-    } else {
-        $stmt = $pdo->prepare("
-            DELETE FROM company_routes
-            WHERE id = :route_id
-              AND company_id = :company_id
-        ");
-        $stmt->execute([
-            'route_id' => $routeId,
-            'company_id' => $companyId,
-        ]);
-
-        $action = 'DELETED';
-    }
+    $pdo->prepare("
+        UPDATE scheduled_services
+        SET service_status = 'CANCELLED'
+        WHERE id = :service_id
+          AND company_id = :company_id
+    ")->execute(['service_id' => $serviceId, 'company_id' => $companyId]);
 
     $pdo->commit();
 
     json_response([
-        'route_id' => $routeId,
-        'action' => $action,
-        'origin_airport_icao_code' => $route['origin_airport_icao_code'],
-        'destination_airport_icao_code' => $route['destination_airport_icao_code'],
+        'status' => 'REMOVED',
+        'service_id' => $serviceId,
+        'service_code' => $service['service_code'],
+        'message' => 'Service removed.',
     ]);
 } catch (Throwable $exception) {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
 
-    json_response(['error' => 'DATABASE_ERROR', 'message' => 'Unable to delete route.'], 500);
+    json_response([
+        'error' => 'SERVICE_REMOVE_FAILED',
+        'message' => 'Unable to remove service.',
+    ], 500);
 }
