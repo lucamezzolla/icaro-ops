@@ -39,6 +39,7 @@
       const data = await getJson(API.catalog);
       const aircraft = data.aircraft || [];
       renderAircraftTable(body, sortAircraftByPurchasePrice(aircraft));
+      removeBuyRuleColumnFromAircraftTables(document);
     } catch (error) {
       body.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load aircraft market.")}</div>`;
     }
@@ -71,7 +72,7 @@
               <td>${escapeHtml(row.range_km ?? "-")} km</td>
               <td>${money(row.new_purchase_price)} ${escapeHtml(row.currency_code || "")}</td>
               <td>
-                <button type="button" data-aircraft-detail="${row.aircraft_model_id || row.id}">Details</button>
+                <button type="button" data-aircraft-detail="${resolveAircraftModelId(row) || ""}">Details</button>
                 <button type="button" data-aircraft-buy="${row.aircraft_model_id || row.id}" class="primary">Buy</button>
               </td>
             </tr>
@@ -81,7 +82,7 @@
     `;
 
     container.querySelectorAll("[data-aircraft-detail]").forEach(button => {
-      button.addEventListener("click", () => showAircraftDetail(Number(button.dataset.aircraftDetail)));
+      button.addEventListener("click", () => showAircraftDetailFromButton(button));
     });
 
     container.querySelectorAll("[data-aircraft-buy]").forEach(button => {
@@ -362,6 +363,76 @@ function sortAircraftByPurchasePrice(rows) {
     return String(a.icao_type_code || a.model_code || a.model_name || "")
       .localeCompare(String(b.icao_type_code || b.model_code || b.model_name || ""));
   });
+}
+
+
+function resolveAircraftModelId(row) {
+  const candidates = [
+    row.aircraft_model_id,
+    row.aircraftModelId,
+    row.model_id,
+    row.modelId,
+    row.id
+  ];
+
+  for (const value of candidates) {
+    const number = Number(value);
+
+    if (Number.isInteger(number) && number > 0) {
+      return number;
+    }
+  }
+
+  return null;
+}
+
+function removeBuyRuleColumnFromAircraftTables(root = document) {
+  root.querySelectorAll("table").forEach(table => {
+    const headers = Array.from(table.querySelectorAll("thead th, tr:first-child th"));
+    const index = headers.findIndex(header => header.textContent.trim().toUpperCase() === );
+
+    if (index < 0) {
+      return;
+    }
+
+    table.querySelectorAll("tr").forEach(row => {
+      const cells = Array.from(row.children);
+
+      if (cells[index]) {
+        cells[index].remove();
+      }
+    });
+  });
+}
+
+
+function aircraftModelIdFromButton(button) {
+  const raw = button.dataset.aircraftDetail || button.dataset.modelDetail || "";
+  const id = Number(raw);
+
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function showAircraftDetailFromButton(button) {
+  const id = aircraftModelIdFromButton(button);
+
+  if (!id) {
+    alert("Aircraft details are not available for this row because the model id is missing.");
+    return;
+  }
+
+  showAircraftDetail(id);
+}
+
+function openAircraftDetailFromButton(button) {
+  const id = aircraftModelIdFromButton(button);
+
+  if (!id) {
+    alert("Aircraft details are not available for this row because the model id is missing.");
+    return;
+  }
+
+  openAircraftDetail(id);
 }
 
 function escapeHtml(value) {

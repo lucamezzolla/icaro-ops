@@ -71,7 +71,7 @@ function renderFleetTable(rows) {
   `).join("");
 
   tbody.querySelectorAll("[data-aircraft-detail]").forEach(button => {
-    button.addEventListener("click", () => openAircraftDetail(Number(button.dataset.aircraftDetail)));
+    button.addEventListener("click", () => openAircraftDetailFromButton(button));
   });
 
   tbody.querySelectorAll("[data-aircraft-image]").forEach(button => {
@@ -190,10 +190,7 @@ function renderCatalog(rows, pilotCoverage) {
   }
 
   list.innerHTML = `
-    <div class="info-box">
-</div>
-
-    <div class="table-wrap catalog-table-wrap">
+<div class="table-wrap catalog-table-wrap">
       <table>
         <thead>
           <tr>
@@ -203,8 +200,7 @@ function renderCatalog(rows, pilotCoverage) {
             <th>Range</th>
             <th>Cruise</th>
             <th>Price</th>
-            <th>Buy rule</th>
-            <th></th>
+<th></th>
           </tr>
         </thead>
         <tbody>
@@ -223,7 +219,7 @@ function renderCatalog(rows, pilotCoverage) {
               </td>
               <td>
                 <div class="button-row">
-                  <button type="button" data-model-detail="${a.aircraft_model_id || a.id}">Details</button>
+                  <button type="button" data-model-detail="${resolveAircraftModelId(a) || ""}">Details</button>
                   <button type="button" data-buy-model="${a.aircraft_model_id || a.id}" class="secondary">Buy</button>
                 </div>
               </td>
@@ -496,6 +492,76 @@ function sortAircraftByPurchasePrice(rows) {
     return String(a.icao_type_code || a.model_code || a.model_name || "")
       .localeCompare(String(b.icao_type_code || b.model_code || b.model_name || ""));
   });
+}
+
+
+function resolveAircraftModelId(row) {
+  const candidates = [
+    row.aircraft_model_id,
+    row.aircraftModelId,
+    row.model_id,
+    row.modelId,
+    row.id
+  ];
+
+  for (const value of candidates) {
+    const number = Number(value);
+
+    if (Number.isInteger(number) && number > 0) {
+      return number;
+    }
+  }
+
+  return null;
+}
+
+function removeBuyRuleColumnFromAircraftTables(root = document) {
+  root.querySelectorAll("table").forEach(table => {
+    const headers = Array.from(table.querySelectorAll("thead th, tr:first-child th"));
+    const index = headers.findIndex(header => header.textContent.trim().toUpperCase() === );
+
+    if (index < 0) {
+      return;
+    }
+
+    table.querySelectorAll("tr").forEach(row => {
+      const cells = Array.from(row.children);
+
+      if (cells[index]) {
+        cells[index].remove();
+      }
+    });
+  });
+}
+
+
+function aircraftModelIdFromButton(button) {
+  const raw = button.dataset.aircraftDetail || button.dataset.modelDetail || "";
+  const id = Number(raw);
+
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+function showAircraftDetailFromButton(button) {
+  const id = aircraftModelIdFromButton(button);
+
+  if (!id) {
+    alert("Aircraft details are not available for this row because the model id is missing.");
+    return;
+  }
+
+  showAircraftDetail(id);
+}
+
+function openAircraftDetailFromButton(button) {
+  const id = aircraftModelIdFromButton(button);
+
+  if (!id) {
+    alert("Aircraft details are not available for this row because the model id is missing.");
+    return;
+  }
+
+  openAircraftDetail(id);
 }
 
 function escapeHtml(value) {

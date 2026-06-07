@@ -1,0 +1,6 @@
+
+th.buy-rule,
+td.buy-rule,
+.aircraft-buy-rule {
+  display: none !important;
+}

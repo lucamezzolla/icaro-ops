@@ -548,3 +548,9 @@ dialog .dialog-footer {
 .aircraft-market-filter-hidden {
   display: none !important;
 }
+
+th.buy-rule,
+td.buy-rule,
+.aircraft-buy-rule {
+  display: none !important;
+}
