@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/aircraft-type-rating.php';
+
 function dispatch_fetch_flight_definition_for_update(PDO $pdo, int $companyId, int $serviceId): ?array
 {
     $stmt = $pdo->prepare("
@@ -129,12 +131,7 @@ function dispatch_allowed_model_codes(array $service): array
 
 function dispatch_fetch_pilots_for_aircraft_model(PDO $pdo, int $companyId, string $modelCode): array
 {
-    $license = match ($modelCode) {
-        'C208B_GRAND_CARAVAN_EX' => 'C208_TYPE',
-        'DHC6_TWIN_OTTER_400' => 'DHC6_TYPE',
-        'ATR42_600' => 'ATR42_TYPE',
-        default => null,
-    };
+    $license = required_aircraft_type_rating($pdo, $modelCode);
 
     $sql = "
         SELECT s.id AS staff_id, s.display_name, s.salary_per_flight
@@ -147,6 +144,7 @@ function dispatch_fetch_pilots_for_aircraft_model(PDO $pdo, int $companyId, stri
             WHERE l.company_staff_id = s.id AND l.license_code = 'CPL'
           )
     ";
+
     $params = ['company_id' => $companyId];
 
     if ($license !== null) {
@@ -160,8 +158,10 @@ function dispatch_fetch_pilots_for_aircraft_model(PDO $pdo, int $companyId, stri
     }
 
     $sql .= " ORDER BY s.reliability_score DESC, s.fatigue_score ASC, s.id LIMIT 2";
+
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
+
     return $stmt->fetchAll();
 }
 

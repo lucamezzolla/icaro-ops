@@ -191,14 +191,12 @@ function renderCatalog(rows, pilotCoverage) {
 
   list.innerHTML = `
     <div class="info-box">
-      <strong>Current level aircraft market</strong>
+      <strong>Development open aircraft market</strong>
       <p>
-        This table only shows aircraft available for your current operating level.
-        Endgame aircraft such as Concorde stay locked until later progression.
+        All aircraft models are visible for testing. Purchase is limited only by company budget.
       </p>
       <p>
-        Qualified pilots: ${escapeHtml(pilotCoverage.current_qualified_pilots ?? "-")}.
-        Required for current fleet: ${escapeHtml(pilotCoverage.required_pilots_for_current_fleet ?? "-")}.
+        Pilot qualifications, base level, reputation, endgame locks and progression rules are disabled in this development market.
       </p>
     </div>
 
@@ -212,7 +210,7 @@ function renderCatalog(rows, pilotCoverage) {
             <th>Range</th>
             <th>Cruise</th>
             <th>Price</th>
-            <th>Pilot coverage</th>
+            <th>Buy rule</th>
             <th></th>
           </tr>
         </thead>
@@ -226,8 +224,8 @@ function renderCatalog(rows, pilotCoverage) {
               <td>${escapeHtml(a.cruise_speed_kmh ?? "-")} km/h</td>
               <td>${money(a.new_purchase_price || 0)} ${escapeHtml(a.currency_code || "EUR")}</td>
               <td>
-                <span class="badge ${a.pilot_coverage_ok_after_purchase ? "good" : "warn"}">
-                  ${escapeHtml(a.current_qualified_pilots ?? "-")} / ${escapeHtml(a.required_pilots_after_purchase ?? "-")}
+                <span class="badge ${a.can_afford === false ? "warn" : "good"}">
+                  ${a.can_afford === false ? "Need budget" : "Budget only"}
                 </span>
               </td>
               <td>
@@ -366,23 +364,11 @@ async function fleetPostJsonWithVisibleErrors(url, payload, targetBox = null) {
     const lines = [];
     const code = body?.error || `HTTP_${response.status}`;
 
-    if (code === "INSUFFICIENT_QUALIFIED_PILOTS") {
-      lines.push("Pilot coverage is not sufficient for this purchase.");
+    if (code === "INSUFFICIENT_FUNDS") {
+      lines.push(body?.message || "Company budget is not enough to buy this aircraft.");
 
-      if (
-        body?.required_pilots_after_purchase !== undefined &&
-        body?.current_qualified_pilots !== undefined
-      ) {
-        const missingPilots = Math.max(
-          0,
-          Number(body.required_pilots_after_purchase) - Number(body.current_qualified_pilots)
-        );
-
-        lines.push(`You need ${missingPilots} more qualified pilots to buy this aircraft.`);
-      }
-
-      if (body?.required_license) {
-        lines.push(`Required aircraft qualification: ${body.required_license}`);
+      if (body?.missing_amount !== undefined) {
+        lines.push(`Missing amount: ${body.missing_amount}`);
       }
     } else {
       lines.push(body?.message || code || `Request failed: ${response.status}`);
