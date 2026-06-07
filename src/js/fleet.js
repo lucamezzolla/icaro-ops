@@ -172,7 +172,7 @@ async function openBuyDialog() {
 
   try {
     const data = await getJson(API.catalog);
-    catalogAircraft = data.aircraft || [];
+    catalogAircraft = sortAircraftByPurchasePrice(data.aircraft || []);
     renderCatalog(catalogAircraft, data.pilot_coverage || {});
   } catch (error) {
     list.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load aircraft catalog.")}</div>`;
@@ -191,14 +191,7 @@ function renderCatalog(rows, pilotCoverage) {
 
   list.innerHTML = `
     <div class="info-box">
-      <strong>Development open aircraft market</strong>
-      <p>
-        All aircraft models are visible for testing. Purchase is limited only by company budget.
-      </p>
-      <p>
-        Pilot qualifications, base level, reputation, endgame locks and progression rules are disabled in this development market.
-      </p>
-    </div>
+</div>
 
     <div class="table-wrap catalog-table-wrap">
       <table>
@@ -466,6 +459,43 @@ function displayAircraftAirport(a) {
     a.current_airport_code ||
     a.home_base_icao_code ||
     "-";
+}
+
+
+function aircraftPurchasePriceValue(row) {
+  const candidates = [
+    row.new_purchase_price,
+    row.base_purchase_price,
+    row.purchase_price,
+    row.estimated_new_price,
+    row.catalog_price,
+    row.price_amount,
+    row.new_cost_amount,
+    row.price
+  ];
+
+  for (const value of candidates) {
+    const number = Number(value);
+
+    if (Number.isFinite(number) && number > 0) {
+      return number;
+    }
+  }
+
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function sortAircraftByPurchasePrice(rows) {
+  return [...rows].sort((a, b) => {
+    const priceDelta = aircraftPurchasePriceValue(a) - aircraftPurchasePriceValue(b);
+
+    if (priceDelta !== 0) {
+      return priceDelta;
+    }
+
+    return String(a.icao_type_code || a.model_code || a.model_name || "")
+      .localeCompare(String(b.icao_type_code || b.model_code || b.model_name || ""));
+  });
 }
 
 function escapeHtml(value) {

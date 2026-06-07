@@ -1,0 +1,34 @@
+
+.aircraft-market-filters {
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 16px;
+  background: rgba(255,255,255,.04);
+}
+
+.aircraft-market-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: .75rem;
+  align-items: end;
+}
+
+.aircraft-market-filter-grid label {
+  display: grid;
+  gap: .35rem;
+}
+
+.aircraft-market-filter-grid span {
+  font-size: .82rem;
+  opacity: .78;
+}
+
+.aircraft-market-filter-grid input,
+.aircraft-market-filter-grid select {
+  width: 100%;
+}
+
+.aircraft-market-filter-hidden {
+  display: none !important;
+}

@@ -38,7 +38,7 @@
     try {
       const data = await getJson(API.catalog);
       const aircraft = data.aircraft || [];
-      renderAircraftTable(body, aircraft);
+      renderAircraftTable(body, sortAircraftByPurchasePrice(aircraft));
     } catch (error) {
       body.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load aircraft market.")}</div>`;
     }
@@ -327,7 +327,44 @@
     return Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
-  function escapeHtml(value) {
+  
+function aircraftPurchasePriceValue(row) {
+  const candidates = [
+    row.new_purchase_price,
+    row.base_purchase_price,
+    row.purchase_price,
+    row.estimated_new_price,
+    row.catalog_price,
+    row.price_amount,
+    row.new_cost_amount,
+    row.price
+  ];
+
+  for (const value of candidates) {
+    const number = Number(value);
+
+    if (Number.isFinite(number) && number > 0) {
+      return number;
+    }
+  }
+
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function sortAircraftByPurchasePrice(rows) {
+  return [...rows].sort((a, b) => {
+    const priceDelta = aircraftPurchasePriceValue(a) - aircraftPurchasePriceValue(b);
+
+    if (priceDelta !== 0) {
+      return priceDelta;
+    }
+
+    return String(a.icao_type_code || a.model_code || a.model_name || "")
+      .localeCompare(String(b.icao_type_code || b.model_code || b.model_name || ""));
+  });
+}
+
+function escapeHtml(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
