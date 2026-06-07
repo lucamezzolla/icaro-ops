@@ -126,6 +126,7 @@ try {
     put($values, $columns, 'pilot_1_staff_id', (int)$pilots[0]['staff_id']);
     put($values, $columns, 'pilot_2_staff_id', (int)$pilots[1]['staff_id']);
     put($values, $columns, 'technician_staff_id', $technician ? (int)$technician['staff_id'] : null);
+    put($values, $columns, 'passenger_capacity', $capacity);
     put($values, $columns, 'passenger_count', $passengerCount);
     put($values, $columns, 'passenger_revenue', number_format($revenue, 2, '.', ''));
     put($values, $columns, 'fuel_cost', number_format($fuelCost, 2, '.', ''));

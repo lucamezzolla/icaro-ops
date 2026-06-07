@@ -191,7 +191,13 @@ async function startFlightNow(serviceId) {
       return;
     }
 
-    const aircraftId = await chooseAircraftForOnDemandFlight(data.flight, available);
+    let aircraftId = null;
+
+    if (available.length === 1) {
+      aircraftId = Number(available[0].company_aircraft_id || available[0].aircraft_id);
+    } else {
+      aircraftId = await chooseAircraftForOnDemandFlight(data.flight, available);
+    }
 
     if (!aircraftId) {
       return;
