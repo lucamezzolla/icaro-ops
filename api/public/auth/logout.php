@@ -2,17 +2,33 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
-require __DIR__ . '/../../lib/session.php';
 
-start_app_session();
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
 
 $_SESSION = [];
+$params = session_get_cookie_params();
 
 if (ini_get('session.use_cookies')) {
-    $params = session_get_cookie_params();
-    setcookie(session_name(), '', time() - 42000, $params['path'], $params['domain'] ?? '', (bool)$params['secure'], (bool)$params['httponly']);
+    setcookie(session_name(), '', [
+        'expires' => time() - 42000,
+        'path' => $params['path'] ?: '/',
+        'domain' => $params['domain'] ?: '',
+        'secure' => (bool)$params['secure'],
+        'httponly' => (bool)$params['httponly'],
+        'samesite' => $params['samesite'] ?: 'Lax',
+    ]);
 }
 
 session_destroy();
 
-json_response(['ok' => true]);
+setcookie('icaro_remember_me', '', [
+    'expires' => time() - 42000,
+    'path' => '/',
+    'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
+
+json_response(['status' => 'LOGGED_OUT']);

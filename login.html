@@ -36,7 +36,12 @@
           <span>Keep this session on this browser</span>
         </label>
 
-        <button type="submit">Login</button>
+        
+          <label class="remember-me-row">
+            <input id="rememberMe" name="remember_me" type="checkbox">
+            <span>Remember me on this browser</span>
+          </label>
+<button type="submit">Login</button>
       </form>
 
       <div id="loginError" class="auth-error" hidden></div>
@@ -49,5 +54,6 @@
   </main>
 
   <script src="src/js/login.js"></script>
+  <script src="src/js/login-remember-me.js"></script>
 </body>
 </html>

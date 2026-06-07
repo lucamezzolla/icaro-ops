@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
 
+require_once __DIR__ . '/../../lib/remember-login.php';
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['error' => 'METHOD_NOT_ALLOWED'], 405);
 }
@@ -49,6 +50,8 @@ $_SESSION['company_id'] = (int)$row['company_id'];
 
 $update = db()->prepare("UPDATE players SET last_login_at_utc = UTC_TIMESTAMP() WHERE id = :player_id");
 $update->execute(['player_id' => (int)$row['player_id']]);
+
+remember_login_if_requested($payload);
 
 json_response([
     'player_id' => (int)$row['player_id'],
