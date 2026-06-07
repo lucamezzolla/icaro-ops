@@ -54,7 +54,10 @@
           <h1>Fleet</h1>
           <p>Manage owned aircraft, maintenance and new aircraft purchases.</p>
         </div>
-        <button id="buyAircraftButton" type="button">Buy aircraft</button>
+        <div class="fleet-page-actions" aria-label="Fleet actions">
+          <button id="buyAircraftButton" type="button" class="icon-button" title="Buy aircraft" aria-label="Buy aircraft">+</button>
+          <button id="refreshButton" type="button" class="icon-button" title="Refresh fleet" aria-label="Refresh fleet">↻</button>
+        </div>
       </section>
 
       <div id="fleetPageError" class="page-error" hidden></div>
@@ -62,30 +65,20 @@
 
       <section class="table-grid">
         <article class="card">
-          <div class="card-header">
-            <div>
-              <h2>Owned aircraft</h2>
-              <p>Essential data only. Open details for technical and financial information.</p>
-            </div>
-            <button id="refreshButton" type="button">Refresh</button>
-          </div>
-
           <div class="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th>Registration</th>
-                  <th>Aircraft</th>
-                  <th>Status</th>
-                  <th>Airport</th>
-                  <th>Condition</th>
-                  <th>Hours</th>
-                  <th>Cycles</th>
-                  <th></th>
+                  <th data-fleet-sort="registration_code">Registration</th>
+                  <th data-fleet-sort="aircraft_name">Aircraft</th>
+                  <th data-fleet-sort="status_display">Status</th>
+                  <th data-fleet-sort="condition_percent" data-sort-type="number">Condition</th>
+                  <th data-fleet-sort="airframe_hours" data-sort-type="number">Hours</th>
+                  <th data-fleet-sort="cycles_count" data-sort-type="number">Cycles</th>
                 </tr>
               </thead>
               <tbody id="fleetTableBody">
-                <tr><td colspan="8">Loading...</td></tr>
+                <tr><td colspan="6">Loading...</td></tr>
               </tbody>
             </table>
           </div>

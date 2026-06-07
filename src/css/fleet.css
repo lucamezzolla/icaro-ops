@@ -554,3 +554,126 @@ td.buy-rule,
 .aircraft-buy-rule {
   display: none !important;
 }
+
+/* Fleet table status badges should fill the whole status column. */
+#fleetTableBody .badge {
+  display: grid;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  white-space: nowrap;
+}
+
+
+
+/* Fleet table sorting and compact actions. */
+.sortable-header {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+
+.sortable-header::after {
+  content: "↕";
+  margin-left: 6px;
+  opacity: .45;
+  font-size: .75rem;
+}
+
+.sortable-header.sort-asc::after {
+  content: "↑";
+  opacity: .95;
+}
+
+.sortable-header.sort-desc::after {
+  content: "↓";
+  opacity: .95;
+}
+
+.aircraft-name-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.aircraft-name-link:hover,
+.aircraft-name-link:focus-visible {
+  color: var(--text);
+  background: transparent;
+  outline: none;
+}
+
+.fleet-status-badge,
+#fleetTableBody .badge {
+  width: 100%;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+
+.dialog-footer-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-right: auto;
+}
+
+
+/* Fleet owned-aircraft toolbar. */
+.fleet-table-header {
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.fleet-table-header #refreshButton {
+  margin-left: auto;
+}
+
+/* Fleet table toolbar: legacy styles kept unused. */
+.fleet-table-card-header {
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.fleet-table-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.fleet-table-actions .icon-button {
+  min-width: 42px;
+  height: 38px;
+  padding: 0 12px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+/* Fleet page toolbar: compact actions in the top-right page header. */
+.fleet-page-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.fleet-page-actions .icon-button {
+  min-width: 42px;
+  height: 38px;
+  padding: 0 12px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+

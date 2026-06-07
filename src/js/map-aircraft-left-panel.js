@@ -289,10 +289,12 @@
           ${row("Remaining", `<span id="leftPanelLiveRemaining">-</span>`)}
           ${row("Progress", `<span id="leftPanelLiveProgress">-</span>`)}
           ${row("Passengers", `${flight.passenger_count} / ${flight.passenger_capacity}`)}
+          ${flightProfitRow(flight)}
 </dl>
       </section>
     `;
 
+    bindProfitDialog(flight);
     startPanelTimer(flight);
   }
 
@@ -458,8 +460,170 @@
     return escapeHtml(text);
   }
 
-  function row(label, value) {
+  function flightProfitRow(flight) {
+    const currency = escapeHtml(flight.currency_code || "EUR");
+    const profit = Number(flight.profit_amount || 0);
+    const cssClass = profitClass(profit);
+    const label = profit > 0 ? "Profit" : profit < 0 ? "Loss" : "Break-even";
+
+    return row(
+      "Profit",
+      `<button type="button" id="leftPanelProfitButton" class="aircraft-live-profit-button ${cssClass}" title="Show flight economic details">${label}: ${money(profit)} ${currency}</button>`
+    );
+  }
+
+  function profitClass(value) {
+    const n = Number(value || 0);
+
+    if (n > 0) {
+      return "profit-positive";
+    }
+
+    if (n < 0) {
+      return "profit-negative";
+    }
+
+    return "";
+  }
+
+  function money(value) {
+    const n = Number(value || 0);
+
+    return n.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+  }
+
+function row(label, value) {
     return `<div><dt>${escapeHtml(label)}</dt><dd>${value}</dd></div>`;
+  }
+
+  function bindProfitDialog(flight) {
+    const button = companyPanelElement?.querySelector("#leftPanelProfitButton");
+
+    if (!button) {
+      return;
+    }
+
+    button.addEventListener("click", () => showFlightProfitDialog(flight));
+  }
+
+  function showFlightProfitDialog(flight) {
+    const currency = escapeHtml(flight.currency_code || "EUR");
+    const profit = Number(flight.profit_amount || 0);
+    const revenue = Number(flight.passenger_revenue || 0);
+    const cost = Number(flight.total_operating_cost || 0);
+    const cssClass = profitClass(profit);
+    const label = profit > 0 ? "Profit" : profit < 0 ? "Loss" : "Break-even";
+
+    injectProfitDialogCss();
+
+    const dialog = document.createElement("dialog");
+    dialog.className = "aircraft-live-profit-dialog";
+    dialog.innerHTML = `
+      <form method="dialog" class="aircraft-live-profit-dialog-card">
+        <header>
+          <div>
+            <p class="eyebrow">Flight economics</p>
+            <h2>${escapeHtml(flight.flight_code || "Flight")}</h2>
+          </div>
+          <button type="submit" aria-label="Close">×</button>
+        </header>
+
+        <dl>
+          ${row("Route", `${escapeHtml(flight.origin_airport_icao_code || "-")} → ${escapeHtml(flight.destination_airport_icao_code || "-")}`)}
+          ${row("Passengers", `${escapeHtml(flight.passenger_count ?? "-")} / ${escapeHtml(flight.passenger_capacity ?? "-")}`)}
+          ${row("Revenue", `${money(revenue)} ${currency}`)}
+          ${row("Operating cost", `${money(cost)} ${currency}`)}
+          ${row(label, `<strong class="${cssClass}">${money(profit)} ${currency}</strong>`)}
+        </dl>
+      </form>
+    `;
+
+    document.body.appendChild(dialog);
+    dialog.addEventListener("close", () => dialog.remove(), { once: true });
+
+    if (typeof dialog.showModal === "function") {
+      dialog.showModal();
+      return;
+    }
+
+    window.alert(`${label}: ${money(profit)} ${currency}
+Revenue: ${money(revenue)} ${currency}
+Cost: ${money(cost)} ${currency}`);
+    dialog.remove();
+  }
+
+  function injectProfitDialogCss() {
+    if (document.querySelector("#icaroLiveAircraftProfitDialogCss")) {
+      return;
+    }
+
+    const style = document.createElement("style");
+    style.id = "icaroLiveAircraftProfitDialogCss";
+    style.textContent = `
+      .aircraft-live-profit-button {
+        border: 0;
+        padding: 0;
+        background: transparent;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+
+      .aircraft-live-profit-dialog::backdrop {
+        background: rgba(0, 0, 0, 0.45);
+      }
+
+      .aircraft-live-profit-dialog {
+        border: 0;
+        border-radius: 16px;
+        padding: 0;
+        max-width: min(520px, 92vw);
+      }
+
+      .aircraft-live-profit-dialog-card {
+        padding: 1.25rem;
+        min-width: min(420px, 86vw);
+      }
+
+      .aircraft-live-profit-dialog-card header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+
+      .aircraft-live-profit-dialog-card header button {
+        border: 0;
+        background: transparent;
+        font-size: 1.5rem;
+        cursor: pointer;
+      }
+
+      .aircraft-live-profit-dialog-card dl {
+        display: grid;
+        gap: 0.6rem;
+        margin: 0;
+      }
+
+      .aircraft-live-profit-dialog-card dl > div {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 1rem;
+        align-items: baseline;
+      }
+
+      .aircraft-live-profit-dialog-card dt,
+      .aircraft-live-profit-dialog-card dd {
+        margin: 0;
+      }
+    `;
+    document.head.appendChild(style);
   }
 
   function parseUtc(value) {

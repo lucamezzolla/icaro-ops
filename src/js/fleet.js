@@ -8,11 +8,13 @@ const API = {
 
 let ownedAircraft = [];
 let catalogAircraft = [];
+let fleetSortState = { key: null, direction: "asc" };
 
 document.addEventListener("DOMContentLoaded", async () => {
   startUtcClock();
   document.querySelector("#refreshButton")?.addEventListener("click", loadFleet);
   document.querySelector("#buyAircraftButton")?.addEventListener("click", openBuyDialog);
+  setupFleetTableSorting();
   await loadFleet();
 });
 
@@ -45,38 +47,176 @@ function renderSummary(summary, rows) {
 
 function renderFleetTable(rows) {
   const tbody = document.querySelector("#fleetTableBody");
+  const displayRows = sortedFleetRows(rows);
 
-  if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="8">No owned aircraft yet.</td></tr>`;
+  if (!displayRows.length) {
+    tbody.innerHTML = `<tr><td colspan="6">No owned aircraft yet.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = rows.map(a => `
-    <tr>
-      <td><strong>${escapeHtml(a.registration_code)}</strong></td>
-      <td>${escapeHtml(a.manufacturer)} ${escapeHtml(a.model_name)}</td>
-      <td><span class="badge ${statusClass(a.status)}">${escapeHtml(a.status)}</span></td>
-      <td>${escapeHtml(displayAircraftAirport(a))}</td>
-      <td class="${conditionClass(a.condition_percent)}">${escapeHtml(a.condition_percent ?? "-")}%</td>
-      <td>${escapeHtml(a.airframe_hours ?? "0")}</td>
-      <td>${escapeHtml(a.cycles_count ?? "0")}</td>
-      <td>
-        <div class="button-row">
-          <button type="button" data-aircraft-detail="${a.aircraft_id}">Details</button>
-          <button type="button" data-aircraft-image="${a.aircraft_id}" class="secondary">Image</button>
-          <a class="button-link" href="maintenance.html?aircraftId=${encodeURIComponent(a.aircraft_id)}">Maintenance</a>
-        </div>
-      </td>
-    </tr>
-  `).join("");
+  tbody.innerHTML = displayRows.map(a => {
+    const aircraftName = `${a.manufacturer || ""} ${a.model_name || ""}`.trim() || "Aircraft";
+
+    return `
+      <tr>
+        <td><strong>${escapeHtml(a.registration_code)}</strong></td>
+        <td>
+          <button type="button" class="aircraft-name-link" data-aircraft-detail="${escapeHtml(a.aircraft_id)}">
+            ${escapeHtml(aircraftName)}
+          </button>
+        </td>
+        <td><span class="badge fleet-status-badge ${statusClass(a.status)}">${escapeHtml(displayAircraftStatus(a))}</span></td>
+        <td class="${conditionClass(a.condition_percent)}">${escapeHtml(a.condition_percent ?? "-")}%</td>
+        <td>${escapeHtml(a.airframe_hours ?? "0")}</td>
+        <td>${escapeHtml(a.cycles_count ?? "0")}</td>
+      </tr>
+    `;
+  }).join("");
 
   tbody.querySelectorAll("[data-aircraft-detail]").forEach(button => {
     button.addEventListener("click", () => openAircraftDetailFromButton(button));
   });
+}
 
-  tbody.querySelectorAll("[data-aircraft-image]").forEach(button => {
-    button.addEventListener("click", () => openAircraftImage(Number(button.dataset.aircraftImage)));
+
+
+async 
+function setupFleetTableSorting() {
+  const table = document.querySelector("#fleetTableBody")?.closest("table");
+  if (!table) return;
+
+  table.querySelectorAll("thead th[data-fleet-sort]").forEach(header => {
+    const key = header.dataset.fleetSort;
+    header.classList.add("sortable-header");
+    header.tabIndex = 0;
+    header.title = "Sort table";
+
+    const toggle = () => {
+      if (fleetSortState.key === key) {
+        fleetSortState.direction = fleetSortState.direction === "asc" ? "desc" : "asc";
+      } else {
+        fleetSortState.key = key;
+        fleetSortState.direction = "asc";
+      }
+
+      updateFleetSortHeaders();
+      renderFleetTable(ownedAircraft);
+    };
+
+    header.addEventListener("click", toggle);
+    header.addEventListener("keydown", event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggle();
+      }
+    });
   });
+}
+
+function updateFleetSortHeaders() {
+  document.querySelectorAll("#fleetTableBody")
+    .forEach(tbody => tbody.closest("table")?.querySelectorAll("thead th[data-fleet-sort]")
+      .forEach(header => {
+        header.classList.remove("sort-asc", "sort-desc");
+        header.removeAttribute("aria-sort");
+
+        if (header.dataset.fleetSort === fleetSortState.key) {
+          const isAsc = fleetSortState.direction === "asc";
+          header.classList.add(isAsc ? "sort-asc" : "sort-desc");
+          header.setAttribute("aria-sort", isAsc ? "ascending" : "descending");
+        }
+      }));
+}
+
+function sortedFleetRows(rows) {
+  if (!fleetSortState.key) {
+    // Initial order is the backend order: first purchased to last purchased.
+    return [...rows];
+  }
+
+  const direction = fleetSortState.direction === "desc" ? -1 : 1;
+  const key = fleetSortState.key;
+
+  return [...rows].sort((a, b) => direction * compareFleetValues(fleetSortValue(a, key), fleetSortValue(b, key)));
+}
+
+function fleetSortValue(row, key) {
+  if (key === "aircraft_name") {
+    return `${row.manufacturer || ""} ${row.model_name || ""}`.trim();
+  }
+
+  if (key === "status_display") {
+    return displayAircraftStatus(row);
+  }
+
+  if (key === "condition_percent" || key === "airframe_hours" || key === "cycles_count") {
+    const value = Number(row[key]);
+    return Number.isFinite(value) ? value : -1;
+  }
+
+  return row[key] ?? "";
+}
+
+function compareFleetValues(left, right) {
+  if (typeof left === "number" && typeof right === "number") {
+    return left - right;
+  }
+
+  return String(left ?? "").localeCompare(String(right ?? ""), undefined, {
+    numeric: true,
+    sensitivity: "base"
+  });
+}
+
+function displayAircraftStatus(a) {
+  const status = String(a.status || a.aircraft_status || "").toUpperCase();
+
+  if (status === "IN_FLIGHT") {
+    return "IN FLIGHT";
+  }
+
+  const label = status || "UNKNOWN";
+  const airport = currentAircraftLocationCode(a);
+
+  return airport && airport !== "-" ? `${label} (${airport})` : label;
+}
+
+function currentAircraftLocationCode(a) {
+  return a.current_airport_icao_code ||
+    a.current_airport ||
+    a.current_airport_code ||
+    a.home_base_icao_code ||
+    "-";
+}
+
+function setAircraftDetailFooter(aircraftId) {
+  const footer = document.querySelector("#aircraftDetailDialog .dialog-footer");
+  if (!footer) return;
+
+  footer.innerHTML = `
+    <div class="dialog-footer-actions">
+      <button type="button" class="secondary" data-aircraft-image-footer="${escapeHtml(aircraftId)}">Image</button>
+      <button type="button" class="secondary" data-aircraft-maintenance-footer="${escapeHtml(aircraftId)}">Maintenance</button>
+    </div>
+    <button value="close">Close</button>
+  `;
+
+  footer.querySelector("[data-aircraft-image-footer]")?.addEventListener("click", event => {
+    openAircraftImage(Number(event.currentTarget.dataset.aircraftImageFooter));
+  });
+
+  footer.querySelector("[data-aircraft-maintenance-footer]")?.addEventListener("click", event => {
+    const id = Number(event.currentTarget.dataset.aircraftMaintenanceFooter);
+    if (Number.isInteger(id) && id > 0) {
+      window.location.href = `maintenance.html?aircraftId=${encodeURIComponent(id)}`;
+    }
+  });
+}
+
+function resetAircraftDetailFooter() {
+  const footer = document.querySelector("#aircraftDetailDialog .dialog-footer");
+  if (!footer) return;
+  footer.innerHTML = `<button value="close">Close</button>`;
 }
 
 async function openAircraftDetail(aircraftId) {
@@ -86,17 +226,22 @@ async function openAircraftDetail(aircraftId) {
 
   title.textContent = "Aircraft";
   content.textContent = "Loading...";
+  setAircraftDetailFooter(aircraftId);
   dialog.showModal();
 
   try {
     const data = await getJson(API.detail(aircraftId));
     const a = data.aircraft;
     title.textContent = `${a.registration_code} · ${a.manufacturer} ${a.model_name}`;
+    setAircraftDetailFooter(a.aircraft_id || aircraftId);
     content.innerHTML = renderAircraftDetail(a, data.recent_flights || []);
   } catch (error) {
+    resetAircraftDetailFooter();
     content.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load aircraft detail.")}</div>`;
   }
 }
+
+
 
 function renderAircraftDetail(a, recentFlights) {
   return `
@@ -213,11 +358,6 @@ function renderCatalog(rows, pilotCoverage) {
               <td>${escapeHtml(a.cruise_speed_kmh ?? "-")} km/h</td>
               <td>${money(a.new_purchase_price || 0)} ${escapeHtml(a.currency_code || "EUR")}</td>
               <td>
-                <span class="badge ${a.can_afford === false ? "warn" : "good"}">
-                  ${a.can_afford === false ? "Need budget" : "Budget only"}
-                </span>
-              </td>
-              <td>
                 <div class="button-row">
                   <button type="button" data-model-detail="${resolveAircraftModelId(a) || ""}">Details</button>
                   <button type="button" data-buy-model="${a.aircraft_model_id || a.id}" class="secondary">Buy</button>
@@ -247,6 +387,7 @@ async function openCatalogModelDetail(modelId) {
   const title = document.querySelector("#aircraftDetailTitle");
   const content = document.querySelector("#aircraftDetailContent");
 
+  resetAircraftDetailFooter();
   title.textContent = "Aircraft model";
   content.textContent = "Loading...";
   detailDialog.showModal();
@@ -586,11 +727,28 @@ function conditionClass(value) {
 }
 
 
-function displayAircraftAirport(a) {
+
+function displayAircraftStatusWithLocation(a) {
+  const rawStatus = String(a.status || a.aircraft_status || "-").toUpperCase();
+  const status = rawStatus.replace(/_/g, " ");
+
+  if (rawStatus === "IN_FLIGHT") {
+    return "IN FLIGHT";
+  }
+
+  const location = aircraftLocationLabel(a);
+  if (!location || location === "-") {
+    return status;
+  }
+
+  return `${status} (${location})`;
+}
+
+function aircraftLocationLabel(a) {
   const status = String(a.status || a.aircraft_status || "").toUpperCase();
 
   if (status === "IN_FLIGHT") {
-    return "-";
+    return "";
   }
 
   return a.current_airport_icao_code ||
@@ -598,6 +756,10 @@ function displayAircraftAirport(a) {
     a.current_airport_code ||
     a.home_base_icao_code ||
     "-";
+}
+
+function displayAircraftAirport(a) {
+  return aircraftLocationLabel(a) || "In flight";
 }
 
 

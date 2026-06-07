@@ -1,25 +1,35 @@
 (() => {
   document.addEventListener("DOMContentLoaded", () => {
-    removeBuyRuleColumns();
+    removeBuyRuleColumnsFromAircraftMarketOnly();
     installBuyRuleColumnObserver();
   });
 
   function installBuyRuleColumnObserver() {
+    const catalogContainer = document.querySelector("#aircraftCatalogList");
+
+    if (!catalogContainer) {
+      return;
+    }
+
     const observer = new MutationObserver(() => {
-      removeBuyRuleColumns();
+      removeBuyRuleColumnsFromAircraftMarketOnly();
     });
 
-    observer.observe(document.body, {
+    observer.observe(catalogContainer, {
       childList: true,
       subtree: true
     });
-
-    window.setInterval(removeBuyRuleColumns, 700);
   }
 
-  function removeBuyRuleColumns() {
-    document.querySelectorAll("table").forEach(table => {
-      let index = findBuyRuleColumnIndex(table);
+  function removeBuyRuleColumnsFromAircraftMarketOnly() {
+    const dialog = document.querySelector("#buyAircraftDialog");
+
+    if (!dialog) {
+      return;
+    }
+
+    dialog.querySelectorAll("table").forEach(table => {
+      const index = findBuyRuleColumnIndex(table);
 
       if (index < 0) {
         return;
@@ -36,27 +46,23 @@
   }
 
   function findBuyRuleColumnIndex(table) {
-    const headers = Array.from(table.querySelectorAll("thead th, tr:first-child th"));
-
-    const headerIndex = headers.findIndex(header =>
-      normalize(header.textContent) === "BUY RULE"
-    );
+    const headers = Array.from(table.querySelectorAll("thead th"));
+    const headerIndex = headers.findIndex(header => normalize(header.textContent) === "BUY RULE");
 
     if (headerIndex >= 0) {
       return headerIndex;
     }
 
-    const rows = Array.from(table.querySelectorAll("tbody tr, tr"))
-      .filter(row => row.querySelector("td"));
+    const bodyRows = Array.from(table.querySelectorAll("tbody tr"));
 
-    if (!rows.length) {
+    if (!bodyRows.length) {
       return -1;
     }
 
-    const maxCells = Math.max(0, ...rows.map(row => row.children.length));
+    const maxCells = Math.max(0, ...bodyRows.map(row => row.children.length));
 
     for (let index = 0; index < maxCells; index += 1) {
-      const values = rows
+      const values = bodyRows
         .map(row => normalize(row.children[index]?.textContent || ""))
         .filter(Boolean);
 
@@ -64,14 +70,12 @@
         continue;
       }
 
-      const buyRuleLike = values.filter(value =>
+      const buyRuleValues = values.filter(value =>
         value === "BUDGET ONLY" ||
-        value === "OPEN MARKET" ||
-        value === "AVAILABLE" ||
-        value === "BUDGET"
+        value === "NEED BUDGET"
       );
 
-      if (buyRuleLike.length >= Math.max(1, Math.floor(values.length * 0.7))) {
+      if (buyRuleValues.length === values.length) {
         return index;
       }
     }
