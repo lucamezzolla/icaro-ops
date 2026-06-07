@@ -1,0 +1,45 @@
+
+/* Live flight data belongs inside the map popup, not in Fleet panels. */
+#activeFlightsQuickPanel,
+#activeFlightDialog {
+  display: none !important;
+}
+
+.map-aircraft-live-target {
+  cursor: pointer;
+}
+
+.map-aircraft-live-box {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.18);
+}
+
+.map-live-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.map-live-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.map-live-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.map-live-list dt {
+  font-weight: 700;
+  opacity: .78;
+}
+
+.map-live-list dd {
+  margin: 0;
+  text-align: right;
+}

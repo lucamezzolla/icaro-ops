@@ -1,0 +1,63 @@
+
+/* Aircraft live data is shown in the left panel, not in map popups. */
+#activeFlightsQuickPanel,
+#activeFlightDialog,
+#mapAircraftLiveBox {
+  display: none !important;
+}
+
+.map-aircraft-live-target {
+  cursor: pointer;
+}
+
+.aircraft-live-mode {
+  overflow: auto;
+}
+
+.aircraft-live-panel-card {
+  display: grid;
+  gap: 14px;
+}
+
+.aircraft-live-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.aircraft-live-model {
+  padding: 12px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
+}
+
+.aircraft-live-model strong,
+.aircraft-live-model span {
+  display: block;
+}
+
+.aircraft-live-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.aircraft-live-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+
+.aircraft-live-list dt {
+  font-weight: 700;
+  opacity: .76;
+}
+
+.aircraft-live-list dd {
+  margin: 0;
+  text-align: right;
+}
