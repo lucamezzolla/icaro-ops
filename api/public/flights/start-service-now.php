@@ -96,6 +96,7 @@ try {
     $flightCode = next_flight_instance_code($pdo, $companyId);
     $durationMinutes = max(20, (int)($service['estimated_block_minutes'] ?? 60));
     $now = gmdate('Y-m-d H:i:s');
+    $todayUtc = gmdate('Y-m-d');
     $arrival = gmdate('Y-m-d H:i:s', time() + ($durationMinutes * 60));
 
     $capacity = max(1, (int)($aircraft['passenger_capacity_standard'] ?? 1));
@@ -114,6 +115,7 @@ try {
     put($values, $columns, 'company_id', $companyId);
     put($values, $columns, 'scheduled_service_id', $serviceId);
     put($values, $columns, 'flight_code', $flightCode);
+    put($values, $columns, 'flight_date_utc', $todayUtc);
     put($values, $columns, 'flight_operation_type', $isOnDemand ? 'ON_DEMAND' : 'SCHEDULED');
     put($values, $columns, 'status', 'IN_FLIGHT');
     put($values, $columns, 'dispatch_status', $isOnDemand ? 'MANUAL_AIRCRAFT_SELECTED' : 'AUTO_SELECTED_PROFITABLE_AIRCRAFT');
