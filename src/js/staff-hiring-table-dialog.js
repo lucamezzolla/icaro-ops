@@ -5,6 +5,12 @@
     hire: "api/public/staff/hire.php"
   };
 
+  let lastSearch = {
+    role: "PILOT",
+    q: "",
+    fleetOnly: true
+  };
+
   document.addEventListener("click", event => {
     const target = event.target.closest("button, a");
 
@@ -22,51 +28,101 @@
     }
   }, true);
 
-  async function openStaffHiringDialog() {
+  function openStaffHiringDialog() {
     const dialog = ensureDialog();
     dialog.showModal();
-    await loadCandidates("ALL");
+    renderEmptyState();
   }
 
-  async function loadCandidates(role) {
+  async function loadCandidates() {
     const body = document.querySelector("#staffHiringTableBody");
+    const detail = document.querySelector("#staffHiringDetail");
     body.innerHTML = `<p class="muted">Loading candidates...</p>`;
+    detail.innerHTML = "";
+
+    lastSearch = readFilters();
 
     try {
-      const data = await getJson(`${API.candidates}?role=${encodeURIComponent(role)}`);
-      renderCandidates(body, data.candidates || []);
+      const params = new URLSearchParams({
+        role: lastSearch.role,
+        q: lastSearch.q,
+        fleetOnly: lastSearch.fleetOnly ? "1" : "0"
+      });
+      const data = await getJson(`${API.candidates}?${params.toString()}`);
+      renderCandidates(body, data.candidates || [], data.fleet_rating_codes || []);
     } catch (error) {
       body.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load candidates.")}</div>`;
     }
   }
 
-  function renderCandidates(container, candidates) {
+  function readFilters() {
+    return {
+      role: document.querySelector("#staffCandidateRoleFilter")?.value || "PILOT",
+      q: (document.querySelector("#staffCandidateSearch")?.value || "").trim(),
+      fleetOnly: Boolean(document.querySelector("#staffCandidateFleetOnly")?.checked)
+    };
+  }
+
+  function renderEmptyState() {
+    const body = document.querySelector("#staffHiringTableBody");
+    const detail = document.querySelector("#staffHiringDetail");
+    if (!body || !detail) {
+      return;
+    }
+    body.innerHTML = `
+      <div class="staff-empty-market">
+        <strong>Search candidates to start.</strong>
+        <p class="muted">
+          The table starts empty. For pilots, keep “Only ratings for my fleet” enabled to find candidates qualified for the aircraft you own.
+          Each operational aircraft requires two active qualified pilots.
+        </p>
+      </div>
+    `;
+    detail.innerHTML = "";
+  }
+
+  function renderCandidates(container, candidates, fleetRatingCodes) {
     if (!candidates.length) {
-      container.innerHTML = `<p class="muted">No candidates available.</p>`;
+      container.innerHTML = `
+        <div class="staff-empty-market">
+          <strong>No matching candidates.</strong>
+          <p class="muted">Try another name, license, region or disable the fleet-rating filter.</p>
+        </div>
+      `;
       return;
     }
 
+    const fleetHint = fleetRatingCodes.length
+      ? `<p class="muted">Fleet ratings searched: ${escapeHtml(fleetRatingCodes.join(", "))}. Two active qualified pilots are required for every operational aircraft.</p>`
+      : "";
+
     container.innerHTML = `
-      <table class="compact-dialog-table">
+      ${fleetHint}
+      <table class="compact-dialog-table staff-hiring-table">
         <thead>
           <tr>
             <th>Name</th>
             <th>Role</th>
-            <th>Region</th>
-            <th>Experience</th>
+            <th>Fleet rating match</th>
             <th>Licenses</th>
+            <th>Reliability</th>
+            <th>Cost</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           ${candidates.map(candidate => `
             <tr>
-              <td><strong>${escapeHtml(candidate.display_name)}</strong></td>
-              <td>${escapeHtml(candidate.staff_role)}</td>
-              <td>${escapeHtml(candidate.home_region_code || "-")}</td>
-              <td>${escapeHtml(candidate.experience_level || "-")}</td>
-              <td>${escapeHtml(candidate.licenses || "-")}</td>
               <td>
+                <strong>${escapeHtml(candidate.display_name)}</strong>
+                <div class="muted">${escapeHtml(candidate.home_region_code || "-")} · ${escapeHtml(candidate.experience_level || "-")}</div>
+              </td>
+              <td>${escapeHtml(candidate.staff_role)}</td>
+              <td>${escapeHtml(candidate.fleet_matching_licenses || "-")}</td>
+              <td>${escapeHtml(candidate.licenses || "-")}</td>
+              <td>${escapeHtml(candidate.reliability_score ?? "-")}</td>
+              <td>${escapeHtml(candidateCostProfile(candidate))}</td>
+              <td class="row-actions">
                 <button type="button" data-candidate-detail="${candidate.id}">Details</button>
                 <button type="button" data-candidate-hire="${candidate.id}" class="primary">Hire</button>
               </td>
@@ -128,7 +184,12 @@
     try {
       const result = await postJson(API.hire, { candidate_id: id });
       alert(`Hired: ${result.display_name}`);
-      await loadCandidates(document.querySelector("#staffCandidateRoleFilter")?.value || "ALL");
+      await loadCandidates();
+      if (typeof window.loadStaff === "function") {
+        await window.loadStaff();
+      } else {
+        document.querySelector("#refreshButton")?.click();
+      }
     } catch (error) {
       alert(error.message || "Unable to hire candidate.");
     }
@@ -153,17 +214,28 @@
           <button type="button" class="close-button" aria-label="Close">×</button>
         </header>
         <div class="dialog-body">
-          <label>
-            Candidate type
-            <select id="staffCandidateRoleFilter">
-              <option value="ALL">All roles</option>
-              <option value="PILOT">Pilots</option>
-              <option value="TECHNICIAN">Technicians</option>
-            </select>
-          </label>
-          <p class="muted">
-            Candidate names are worldwide. Pilot candidates include type ratings generated from all aircraft models in the database.
-          </p>
+          <div class="staff-candidate-filters">
+            <label>
+              Role
+              <select id="staffCandidateRoleFilter">
+                <option value="PILOT" selected>Pilots</option>
+                <option value="TECHNICIAN">Technicians</option>
+                <option value="ALL">All roles</option>
+              </select>
+            </label>
+            <label>
+              Search
+              <input id="staffCandidateSearch" type="text" placeholder="Name, license, region, experience">
+            </label>
+            <label class="checkbox-line">
+              <input id="staffCandidateFleetOnly" type="checkbox" checked>
+              Only ratings for my fleet
+            </label>
+            <div class="staff-candidate-filter-actions">
+              <button id="staffCandidateSearchButton" type="button" class="primary">Search</button>
+              <button id="staffCandidateClearButton" type="button">Clear</button>
+            </div>
+          </div>
           <div id="staffHiringTableBody"></div>
           <div id="staffHiringDetail" class="dialog-detail-panel"></div>
         </div>
@@ -174,8 +246,25 @@
     `;
 
     dialog.querySelector(".close-button").addEventListener("click", () => dialog.close());
+    dialog.querySelector("#staffCandidateSearchButton").addEventListener("click", loadCandidates);
+    dialog.querySelector("#staffCandidateSearch").addEventListener("keydown", event => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        loadCandidates();
+      }
+    });
+    dialog.querySelector("#staffCandidateClearButton").addEventListener("click", () => {
+      dialog.querySelector("#staffCandidateRoleFilter").value = "PILOT";
+      dialog.querySelector("#staffCandidateSearch").value = "";
+      dialog.querySelector("#staffCandidateFleetOnly").checked = true;
+      renderEmptyState();
+    });
     dialog.querySelector("#staffCandidateRoleFilter").addEventListener("change", event => {
-      loadCandidates(event.target.value);
+      const fleetOnly = dialog.querySelector("#staffCandidateFleetOnly");
+      if (event.target.value !== "PILOT") {
+        fleetOnly.checked = false;
+      }
+      renderEmptyState();
     });
 
     document.body.appendChild(dialog);
@@ -215,6 +304,16 @@
 
   function money(value) {
     return Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function candidateCostProfile(candidate) {
+    const currency = candidate.currency_code || "EUR";
+
+    if (candidate.staff_role === "TECHNICIAN") {
+      return `est. ${money(candidate.daily_retainer || 0)} ${currency}/day + ${money(candidate.hourly_rate || 0)} ${currency}/h maintenance`;
+    }
+
+    return `est. ${money(candidate.salary_per_flight || 0)} ${currency}/leg + ${money(candidate.daily_retainer || 0)} ${currency}/day + ${candidate.revenue_share_percent || 0}% revenue`;
   }
 
   function escapeHtml(value) {

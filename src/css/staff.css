@@ -146,3 +146,63 @@ dialog .dialog-footer {
   flex: 0 0 auto;
 }
 
+/* Staff hiring search dialog. */
+.staff-candidate-filters {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(220px, 1fr) minmax(180px, auto) auto;
+  gap: 12px;
+  align-items: end;
+  margin-bottom: 16px;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 16px;
+  background: rgba(255,255,255,.04);
+}
+
+.staff-candidate-filters label {
+  display: grid;
+  gap: 6px;
+  font-weight: 800;
+}
+
+.staff-candidate-filters input,
+.staff-candidate-filters select {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255,255,255,.08);
+  color: var(--text);
+  font: inherit;
+}
+
+.staff-candidate-filters .checkbox-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+}
+
+.staff-candidate-filter-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.staff-empty-market {
+  border: 1px dashed rgba(255,255,255,.18);
+  border-radius: 16px;
+  padding: 18px;
+  background: rgba(255,255,255,.035);
+}
+
+.staff-hiring-table .row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .staff-candidate-filters {
+    grid-template-columns: 1fr;
+  }
+}

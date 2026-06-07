@@ -300,8 +300,11 @@ async function openCatalogModelDetail(modelId) {
     const buyButton = content.querySelector("#buyModelFromDetailButton");
     if (buyButton && m.is_available_for_current_level) {
       buyButton.addEventListener("click", async () => {
-        await buyAircraft(Number(m.aircraft_model_id || m.id));
-        detailDialog.close();
+        const purchased = await buyAircraft(Number(m.aircraft_model_id || m.id));
+
+        if (purchased) {
+          detailDialog.close();
+        }
       });
     }
   } catch (error) {
@@ -312,22 +315,162 @@ async function openCatalogModelDetail(modelId) {
 
 async function buyAircraft(aircraftModelId) {
   const error = document.querySelector("#buyAircraftError");
-  error.hidden = true;
-  error.textContent = "";
 
-  if (!confirm("Buy this aircraft?")) {
-    return;
+  if (error) {
+    error.hidden = true;
+    error.textContent = "";
+  }
+
+  const modelId = Number(aircraftModelId);
+
+  if (!Number.isInteger(modelId) || modelId <= 0) {
+    showFleetError("Unable to buy aircraft: invalid aircraft model id.");
+    return false;
+  }
+
+  const deliveryAirport = await chooseDeliveryAirport();
+
+  if (!deliveryAirport) {
+    return false;
+  }
+
+  if (!confirm(`Buy this aircraft and deliver it to ${deliveryAirport}?`)) {
+    return false;
   }
 
   try {
-    const result = await fleetPostJsonWithVisibleErrors(API.buyNew, { aircraft_model_id: aircraftModelId }, error);
-    showFleetSuccess(`Aircraft purchased: ${result.registration_code || "new aircraft"}`);
-    document.querySelector("#buyAircraftDialog").close();
+    const result = await fleetPostJsonWithVisibleErrors(API.buyNew, {
+      aircraft_model_id: modelId,
+      delivery_airport_icao_code: deliveryAirport
+    }, error);
+
+    closeDialogIfOpen("#buyAircraftDialog");
+    closeDialogIfOpen("#aircraftMarketTableDialog");
+    closeDialogIfOpen("#aircraftDetailDialog");
+
     await loadFleet();
+
+    showFleetSuccess(
+      `Aircraft purchased: ${result.registration_code || "new aircraft"}. ` +
+      `Delivered to ${result.delivery_airport?.icao_code || deliveryAirport}.`
+    );
+
+    document.querySelector("#fleetTableBody")?.closest("article")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
+
+    return true;
   } catch (err) {
-    error.hidden = false;
-    error.textContent = err.message || "Unable to buy aircraft.";
+    if (error) {
+      error.hidden = false;
+      error.textContent = err.message || "Unable to buy aircraft.";
+    } else {
+      showFleetError(err.message || "Unable to buy aircraft.");
+    }
+
+    return false;
   }
+}
+
+function closeDialogIfOpen(selector) {
+  const dialog = document.querySelector(selector);
+
+  if (dialog?.open) {
+    dialog.close();
+  }
+}
+
+function chooseDeliveryAirport() {
+  return new Promise(resolve => {
+    const dialog = document.createElement("dialog");
+    dialog.id = "fleetDeliveryAirportDialog";
+    dialog.innerHTML = `
+      <form method="dialog" class="dialog-card delivery-airport-dialog-card" id="fleetDeliveryAirportForm">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">Aircraft delivery</p>
+            <h2>Delivery airport</h2>
+          </div>
+          <button type="button" class="close-button" aria-label="Close">×</button>
+        </header>
+
+        <div class="dialog-body">
+          <p class="muted">
+            Enter the ICAO code of the airport where the aircraft must be delivered.
+            This is the airport from which it can operate its first flight.
+          </p>
+
+          <label>
+            Delivery airport ICAO code
+            <input
+              id="fleetDeliveryAirportIcao"
+              type="text"
+              placeholder="Example: LIRA"
+              maxlength="4"
+              autocomplete="off"
+              autocapitalize="characters"
+              spellcheck="false"
+            >
+          </label>
+
+          <div id="fleetDeliveryAirportError" class="page-error" hidden></div>
+        </div>
+
+        <footer class="dialog-footer">
+          <button type="button" id="cancelFleetDeliveryAirport">Cancel</button>
+          <button type="submit" class="primary-button">Continue</button>
+        </footer>
+      </form>
+    `;
+
+    document.body.appendChild(dialog);
+
+    const form = dialog.querySelector("#fleetDeliveryAirportForm");
+    const input = dialog.querySelector("#fleetDeliveryAirportIcao");
+    const error = dialog.querySelector("#fleetDeliveryAirportError");
+
+    const close = value => {
+      dialog.close();
+      dialog.remove();
+      resolve(value);
+    };
+
+    input.addEventListener("input", () => {
+      input.value = input.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
+      error.hidden = true;
+      error.textContent = "";
+    });
+
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+
+      const icaoCode = input.value.trim().toUpperCase();
+
+      if (!icaoCode) {
+        error.hidden = false;
+        error.textContent = "Enter the delivery airport ICAO code.";
+        input.focus();
+        return;
+      }
+
+      if (!/^[A-Z]{4}$/.test(icaoCode)) {
+        error.hidden = false;
+        error.textContent = "Enter a valid 4-letter ICAO airport code, for example LIRA.";
+        input.focus();
+        return;
+      }
+
+      close(icaoCode);
+    });
+
+    dialog.querySelector(".close-button").addEventListener("click", () => close(null));
+    dialog.querySelector("#cancelFleetDeliveryAirport").addEventListener("click", () => close(null));
+    dialog.addEventListener("cancel", () => close(null));
+
+    dialog.showModal();
+    input.focus();
+  });
 }
 
 async function getJson(url) {
@@ -518,7 +661,7 @@ function resolveAircraftModelId(row) {
 function removeBuyRuleColumnFromAircraftTables(root = document) {
   root.querySelectorAll("table").forEach(table => {
     const headers = Array.from(table.querySelectorAll("thead th, tr:first-child th"));
-    const index = headers.findIndex(header => header.textContent.trim().toUpperCase() === );
+    const index = headers.findIndex(header => header.textContent.trim().toUpperCase() === "BUY RULE");
 
     if (index < 0) {
       return;

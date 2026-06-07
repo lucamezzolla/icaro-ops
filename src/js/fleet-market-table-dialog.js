@@ -389,7 +389,7 @@ function resolveAircraftModelId(row) {
 function removeBuyRuleColumnFromAircraftTables(root = document) {
   root.querySelectorAll("table").forEach(table => {
     const headers = Array.from(table.querySelectorAll("thead th, tr:first-child th"));
-    const index = headers.findIndex(header => header.textContent.trim().toUpperCase() === );
+    const index = headers.findIndex(header => header.textContent.trim().toUpperCase() === "BUY RULE");
 
     if (index < 0) {
       return;
