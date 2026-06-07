@@ -19,6 +19,54 @@ if (!$flightInstanceId && !$aircraftId) {
 
 $pdo = db();
 
+$columns = table_columns($pdo, 'scheduled_flight_instances');
+
+$pilot1Column = first_existing_key($columns, [
+    'pilot_1_staff_id',
+    'captain_staff_id',
+    'primary_pilot_staff_id',
+    'pilot_staff_id',
+    'crew_pilot_1_staff_id',
+]);
+
+$pilot2Column = first_existing_key($columns, [
+    'pilot_2_staff_id',
+    'first_officer_staff_id',
+    'secondary_pilot_staff_id',
+    'copilot_staff_id',
+    'crew_pilot_2_staff_id',
+]);
+
+$technicianColumn = first_existing_key($columns, [
+    'technician_staff_id',
+    'maintenance_staff_id',
+    'assigned_technician_staff_id',
+]);
+
+$selectPilot1 = $pilot1Column
+    ? "p1.display_name AS pilot_1_name"
+    : "NULL AS pilot_1_name";
+
+$selectPilot2 = $pilot2Column
+    ? "p2.display_name AS pilot_2_name"
+    : "NULL AS pilot_2_name";
+
+$selectTechnician = $technicianColumn
+    ? "tech.display_name AS technician_name"
+    : "NULL AS technician_name";
+
+$joinPilot1 = $pilot1Column
+    ? "LEFT JOIN company_staff p1 ON p1.id = sfi.`{$pilot1Column}`"
+    : "";
+
+$joinPilot2 = $pilot2Column
+    ? "LEFT JOIN company_staff p2 ON p2.id = sfi.`{$pilot2Column}`"
+    : "";
+
+$joinTechnician = $technicianColumn
+    ? "LEFT JOIN company_staff tech ON tech.id = sfi.`{$technicianColumn}`"
+    : "";
+
 $where = $flightInstanceId
     ? "sfi.id = :flight_instance_id"
     : "sfi.aircraft_id = :aircraft_id AND sfi.status = 'IN_FLIGHT'";
@@ -31,24 +79,68 @@ if ($flightInstanceId) {
     $params['aircraft_id'] = $aircraftId;
 }
 
+$passengerCapacityExpr = isset($columns['passenger_capacity'])
+    ? "sfi.passenger_capacity"
+    : "am.passenger_capacity_standard";
+
+$passengerCountExpr = isset($columns['passenger_count'])
+    ? "sfi.passenger_count"
+    : "0";
+
+$passengerRevenueExpr = isset($columns['passenger_revenue'])
+    ? "sfi.passenger_revenue"
+    : "0.00";
+
+$totalOperatingCostExpr = isset($columns['total_operating_cost'])
+    ? "sfi.total_operating_cost"
+    : "0.00";
+
+$profitAmountExpr = isset($columns['profit_amount'])
+    ? "sfi.profit_amount"
+    : "0.00";
+
+$currencyCodeExpr = isset($columns['currency_code'])
+    ? "sfi.currency_code"
+    : "'EUR'";
+
+$actualDepartureExpr = isset($columns['actual_departure_at_utc'])
+    ? "sfi.actual_departure_at_utc"
+    : "NULL";
+
+$scheduledArrivalExpr = isset($columns['scheduled_arrival_at_utc'])
+    ? "sfi.scheduled_arrival_at_utc"
+    : "NULL";
+
+$actualArrivalExpr = isset($columns['actual_arrival_at_utc'])
+    ? "sfi.actual_arrival_at_utc"
+    : "NULL";
+
+$dispatchStatusExpr = isset($columns['dispatch_status'])
+    ? "sfi.dispatch_status"
+    : "NULL";
+
+$flightOperationTypeExpr = isset($columns['flight_operation_type'])
+    ? "sfi.flight_operation_type"
+    : "NULL";
+
 $stmt = $pdo->prepare("
     SELECT
       sfi.id AS flight_instance_id,
       sfi.flight_code,
       sfi.status,
-      sfi.dispatch_status,
-      sfi.flight_operation_type,
+      {$dispatchStatusExpr} AS dispatch_status,
+      {$flightOperationTypeExpr} AS flight_operation_type,
       sfi.origin_airport_icao_code,
       sfi.destination_airport_icao_code,
-      sfi.actual_departure_at_utc,
-      sfi.scheduled_arrival_at_utc,
-      sfi.actual_arrival_at_utc,
-      sfi.passenger_capacity,
-      sfi.passenger_count,
-      sfi.passenger_revenue,
-      sfi.total_operating_cost,
-      sfi.profit_amount,
-      sfi.currency_code,
+      {$actualDepartureExpr} AS actual_departure_at_utc,
+      {$scheduledArrivalExpr} AS scheduled_arrival_at_utc,
+      {$actualArrivalExpr} AS actual_arrival_at_utc,
+      {$passengerCapacityExpr} AS passenger_capacity,
+      {$passengerCountExpr} AS passenger_count,
+      {$passengerRevenueExpr} AS passenger_revenue,
+      {$totalOperatingCostExpr} AS total_operating_cost,
+      {$profitAmountExpr} AS profit_amount,
+      {$currencyCodeExpr} AS currency_code,
 
       ca.id AS aircraft_id,
       ca.registration_code,
@@ -62,18 +154,18 @@ $stmt = $pdo->prepare("
       am.cruise_speed_kmh,
       am.range_km,
 
-      p1.display_name AS pilot_1_name,
-      p2.display_name AS pilot_2_name
+      {$selectPilot1},
+      {$selectPilot2},
+      {$selectTechnician}
 
     FROM scheduled_flight_instances sfi
     JOIN company_aircraft ca
       ON ca.id = sfi.aircraft_id
     JOIN aircraft_models am
       ON am.id = ca.aircraft_model_id
-    LEFT JOIN company_staff p1
-      ON p1.id = sfi.pilot_1_staff_id
-    LEFT JOIN company_staff p2
-      ON p2.id = sfi.pilot_2_staff_id
+    {$joinPilot1}
+    {$joinPilot2}
+    {$joinTechnician}
     WHERE sfi.company_id = :company_id
       AND {$where}
     ORDER BY sfi.id DESC
@@ -126,8 +218,8 @@ json_response([
         'elapsed_seconds' => $elapsedSeconds,
         'total_seconds' => $totalSeconds,
         'progress_percent' => $progressPercent,
-        'passenger_capacity' => (int)$flight['passenger_capacity'],
-        'passenger_count' => (int)$flight['passenger_count'],
+        'passenger_capacity' => (int)($flight['passenger_capacity'] ?? 0),
+        'passenger_count' => (int)($flight['passenger_count'] ?? 0),
         'passenger_revenue' => $flight['passenger_revenue'],
         'total_operating_cost' => $flight['total_operating_cost'],
         'profit_amount' => $flight['profit_amount'],
@@ -148,8 +240,38 @@ json_response([
     'crew' => [
         'pilot_1_name' => $flight['pilot_1_name'],
         'pilot_2_name' => $flight['pilot_2_name'],
+        'technician_name' => $flight['technician_name'],
+        'pilot_columns_detected' => [
+            'pilot_1' => $pilot1Column,
+            'pilot_2' => $pilot2Column,
+            'technician' => $technicianColumn,
+        ],
     ],
 ]);
+
+function table_columns(PDO $pdo, string $tableName): array
+{
+    $stmt = $pdo->prepare("
+        SELECT COLUMN_NAME
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = :table_name
+    ");
+    $stmt->execute(['table_name' => $tableName]);
+
+    return array_flip(array_map(static fn (array $row): string => $row['COLUMN_NAME'], $stmt->fetchAll()));
+}
+
+function first_existing_key(array $columns, array $candidates): ?string
+{
+    foreach ($candidates as $candidate) {
+        if (isset($columns[$candidate])) {
+            return $candidate;
+        }
+    }
+
+    return null;
+}
 
 function parse_utc_ts(mixed $value): ?int
 {
