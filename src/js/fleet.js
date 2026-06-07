@@ -56,7 +56,7 @@ function renderFleetTable(rows) {
       <td><strong>${escapeHtml(a.registration_code)}</strong></td>
       <td>${escapeHtml(a.manufacturer)} ${escapeHtml(a.model_name)}</td>
       <td><span class="badge ${statusClass(a.status)}">${escapeHtml(a.status)}</span></td>
-      <td>${escapeHtml(a.current_airport_icao_code || "-")}</td>
+      <td>${escapeHtml(displayAircraftAirport(a))}</td>
       <td class="${conditionClass(a.condition_percent)}">${escapeHtml(a.condition_percent ?? "-")}%</td>
       <td>${escapeHtml(a.airframe_hours ?? "0")}</td>
       <td>${escapeHtml(a.cycles_count ?? "0")}</td>
@@ -451,6 +451,21 @@ function conditionClass(value) {
   if (n <= 45) return "condition-bad";
   if (n <= 70) return "condition-warn";
   return "condition-ok";
+}
+
+
+function displayAircraftAirport(a) {
+  const status = String(a.status || a.aircraft_status || "").toUpperCase();
+
+  if (status === "IN_FLIGHT") {
+    return "-";
+  }
+
+  return a.current_airport_icao_code ||
+    a.current_airport ||
+    a.current_airport_code ||
+    a.home_base_icao_code ||
+    "-";
 }
 
 function escapeHtml(value) {

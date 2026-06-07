@@ -14,6 +14,7 @@ const ICARO_FLIGHT_API = {
 };
 
 let icaroFlightLayer = null;
+let icaroSelectedFlightRouteLayer = null;
 let icaroSelectedFlightPathLayer = null;
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -69,23 +70,61 @@ async function refreshIcaroFlights() {
         }),
         title: `${flight.flight_code} ${flight.origin_airport_icao_code}-${flight.destination_airport_icao_code}`
       });
+      // Aircraft marker popup disabled: live data is shown in the left Company panel.
+      marker.on("click", event => {
+        if (event?.originalEvent) {
+          L.DomEvent.stopPropagation(event.originalEvent);
+          L.DomEvent.preventDefault(event.originalEvent);
+        }
 
-      marker.bindPopup(`
-        <div class="base-popup">
-          <h3>${escapeHtmlFlight(flight.flight_code)}</h3>
-          <p><strong>${escapeHtmlFlight(flight.registration_code)}</strong> · ${escapeHtmlFlight(flight.model_name)}</p>
-          <p>${escapeHtmlFlight(flight.origin_airport_icao_code)} → ${escapeHtmlFlight(flight.destination_airport_icao_code)}</p>
-          <p>Passengers: ${flight.passenger_count}/${flight.passenger_capacity}</p>
-          <p>Progress: ${Math.round(Number(flight.progress_percent || 0))}%</p>
-          <p>Estimated profit: ${flight.profit_amount} ${flight.currency_code}</p>
-        </div>
-      `);
+        const aircraftId = firstDefinedFlight(
+          flight.aircraft_id,
+          flight.company_aircraft_id,
+          flight.aircraftId
+        );
 
-      marker.on("click", () => {
+        const flightInstanceId = firstDefinedFlight(
+          flight.flight_instance_id,
+          flight.flightInstanceId,
+          flight.instance_id,
+          flight.id
+        );
+
         showSelectedFlightPath(flight);
+
+        const selectedAircraftDetail = {
+          flightInstanceId,
+          aircraftId,
+          registrationCode: flight.registration_code || flight.registrationCode || null
+        };
+
+        if (typeof window.icaroShowAircraftLivePanel === "function") {
+          window.icaroShowAircraftLivePanel(selectedAircraftDetail);
+        }
+
+        window.dispatchEvent(new CustomEvent("icaro:aircraft-selected", {
+          detail: selectedAircraftDetail
+        }));
       });
 
       marker.addTo(icaroFlightLayer);
+
+      const markerElement = marker.getElement?.();
+      if (markerElement) {
+        markerElement.classList.add("map-aircraft-live-target");
+        markerElement.dataset.aircraftId = firstDefinedFlight(
+          flight.aircraft_id,
+          flight.company_aircraft_id,
+          flight.aircraftId
+        ) || "";
+        markerElement.dataset.flightInstanceId = firstDefinedFlight(
+          flight.flight_instance_id,
+          flight.flightInstanceId,
+          flight.instance_id,
+          flight.id
+        ) || "";
+        markerElement.title = "Click to show aircraft live status";
+      }
     }
   } catch {
     // Silent for now. The main map must remain usable.
@@ -207,3 +246,240 @@ function escapeHtmlFlight(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+
+function firstDefinedFlight(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== "") {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+
+function highlightSelectedFlightRoute(flight) {
+  if (!window.L || !window.icaroMap) {
+    return;
+  }
+
+  if (icaroSelectedFlightRouteLayer) {
+    try {
+      icaroMap.removeLayer(icaroSelectedFlightRouteLayer);
+    } catch (error) {
+      console.warn("Unable to remove previous selected flight route", error);
+    }
+
+    icaroSelectedFlightRouteLayer = null;
+  }
+
+  const originLat = Number(firstDefinedFlight(
+    flight.origin_latitude,
+    flight.origin_lat,
+    flight.origin_airport_latitude,
+    flight.departure_latitude
+  ));
+
+  const originLng = Number(firstDefinedFlight(
+    flight.origin_longitude,
+    flight.origin_lng,
+    flight.origin_airport_longitude,
+    flight.departure_longitude
+  ));
+
+  const destinationLat = Number(firstDefinedFlight(
+    flight.destination_latitude,
+    flight.destination_lat,
+    flight.destination_airport_latitude,
+    flight.arrival_latitude
+  ));
+
+  const destinationLng = Number(firstDefinedFlight(
+    flight.destination_longitude,
+    flight.destination_lng,
+    flight.destination_airport_longitude,
+    flight.arrival_longitude
+  ));
+
+  if (
+    !Number.isFinite(originLat) ||
+    !Number.isFinite(originLng) ||
+    !Number.isFinite(destinationLat) ||
+    !Number.isFinite(destinationLng)
+  ) {
+    return;
+  }
+
+  icaroSelectedFlightRouteLayer = L.polyline(
+    [
+      [originLat, originLng],
+      [destinationLat, destinationLng]
+    ],
+    {
+      color: "#e53935",
+      weight: 3,
+      opacity: 0.95,
+      dashArray: "8 8",
+      interactive: false
+    }
+  );
+
+  icaroSelectedFlightRouteLayer.addTo(icaroMap);
+}
+
+
+
+function restoreSelectedFlightRedDashedLine(flight, marker = null) {
+  const map = window.icaroMap || window.map || window.dashboardMap || window.flightMap;
+
+  if (!window.L || !map) {
+    console.warn("Cannot draw selected flight route: Leaflet map not found.");
+    return;
+  }
+
+  if (icaroSelectedFlightRouteLayer) {
+    try {
+      map.removeLayer(icaroSelectedFlightRouteLayer);
+    } catch (error) {
+      console.warn("Unable to remove previous selected route line", error);
+    }
+
+    icaroSelectedFlightRouteLayer = null;
+  }
+
+  const origin = firstLatLngFlight([
+    [flight.origin_latitude, flight.origin_longitude],
+    [flight.origin_lat, flight.origin_lng],
+    [flight.origin_airport_latitude, flight.origin_airport_longitude],
+    [flight.departure_latitude, flight.departure_longitude],
+    [flight.departure_airport_latitude, flight.departure_airport_longitude],
+    [flight.from_latitude, flight.from_longitude],
+    [flight.from_lat, flight.from_lng]
+  ]);
+
+  const destination = firstLatLngFlight([
+    [flight.destination_latitude, flight.destination_longitude],
+    [flight.destination_lat, flight.destination_lng],
+    [flight.destination_airport_latitude, flight.destination_airport_longitude],
+    [flight.arrival_latitude, flight.arrival_longitude],
+    [flight.arrival_airport_latitude, flight.arrival_airport_longitude],
+    [flight.to_latitude, flight.to_longitude],
+    [flight.to_lat, flight.to_lng]
+  ]);
+
+  /*
+   * Fallback: if the API object does not expose explicit origin/destination
+   * coordinates, try common route geometry fields used by flight layers.
+   */
+  const routePoints = firstRoutePointsFlight(flight);
+
+  let points = [];
+
+  if (origin && destination) {
+    points = [origin, destination];
+  } else if (routePoints.length >= 2) {
+    points = routePoints;
+  } else {
+    console.warn("Cannot draw selected flight route: no origin/destination coordinates found on flight object.", flight);
+    return;
+  }
+
+  icaroSelectedFlightRouteLayer = L.polyline(points, {
+    color: "#e53935",
+    weight: 3,
+    opacity: 0.95,
+    dashArray: "8 8",
+    interactive: false,
+    pane: "overlayPane"
+  });
+
+  icaroSelectedFlightRouteLayer.addTo(map);
+
+  try {
+    icaroSelectedFlightRouteLayer.bringToFront();
+  } catch (error) {
+    // Some Leaflet panes/layers may not support bringToFront.
+  }
+}
+
+function firstLatLngFlight(pairs) {
+  for (const pair of pairs) {
+    const lat = Number(pair[0]);
+    const lng = Number(pair[1]);
+
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      return [lat, lng];
+    }
+  }
+
+  return null;
+}
+
+function firstRoutePointsFlight(flight) {
+  const candidates = [
+    flight.route_points,
+    flight.routePoints,
+    flight.polyline_points,
+    flight.polylinePoints,
+    flight.path,
+    flight.coordinates
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeRoutePointsFlight(candidate);
+
+    if (normalized.length >= 2) {
+      return normalized;
+    }
+  }
+
+  return [];
+}
+
+function normalizeRoutePointsFlight(value) {
+  if (!value) {
+    return [];
+  }
+
+  let raw = value;
+
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  const points = [];
+
+  for (const item of raw) {
+    if (Array.isArray(item) && item.length >= 2) {
+      const lat = Number(item[0]);
+      const lng = Number(item[1]);
+
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        points.push([lat, lng]);
+      }
+
+      continue;
+    }
+
+    if (item && typeof item === "object") {
+      const lat = Number(firstDefinedFlight(item.lat, item.latitude));
+      const lng = Number(firstDefinedFlight(item.lng, item.lon, item.longitude));
+
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        points.push([lat, lng]);
+      }
+    }
+  }
+
+  return points;
+}
+
