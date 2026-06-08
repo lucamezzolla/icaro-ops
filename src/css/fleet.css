@@ -677,3 +677,30 @@ td.buy-rule,
   line-height: 1;
 }
 
+/* Aircraft market inline filters */
+.aircraft-market-filter-panel {
+  margin-bottom: 1rem;
+}
+
+.aircraft-market-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.aircraft-market-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.aircraft-market-filters input,
+.aircraft-market-filters select {
+  width: 100%;
+}
+
+.aircraft-market-filter-summary {
+  margin: 0.5rem 0 0;
+}

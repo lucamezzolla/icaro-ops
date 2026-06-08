@@ -42,14 +42,14 @@ if ($priceColumn === null) {
     ], 500);
 }
 
+$engineTypeColumn = first_existing_column($pdo, 'aircraft_models', [
+    'engine_type'
+]);
+$engineTypeExpr = $engineTypeColumn !== null ? "COALESCE({$engineTypeColumn}, '')" : "''";
+
 /*
- * Development market:
- * show every aircraft model.
- *
- * There is intentionally no current-level, reputation, pilot, endgame,
- * availability, or base-tier filtering here.
- *
- * Purchase blocking is budget-only.
+ * Development/open market:
+ * show every aircraft model. Purchase blocking is budget-only.
  */
 $sql = "
     SELECT
@@ -57,8 +57,14 @@ $sql = "
       id,
       manufacturer,
       model_name,
+      CASE
+        WHEN UPPER(TRIM(COALESCE(model_name, ''))) LIKE CONCAT(UPPER(TRIM(COALESCE(manufacturer, ''))), '%')
+          THEN TRIM(COALESCE(model_name, ''))
+        ELSE TRIM(CONCAT(TRIM(COALESCE(manufacturer, '')), ' ', TRIM(COALESCE(model_name, ''))))
+      END AS display_name,
       model_code,
       icao_type_code,
+      {$engineTypeExpr} AS engine_type,
       operation_role,
       passenger_capacity_standard,
       range_km,
@@ -73,10 +79,12 @@ $sql = "
       is_endgame,
       unlock_reputation_score
     FROM aircraft_models
+    WHERE COALESCE(is_active, 1) = 1
     ORDER BY
-      COALESCE({$priceColumn}, 0),
-      manufacturer,
-      model_name
+      display_name,
+      icao_type_code,
+      model_code
+
 ";
 
 $stmt = $pdo->prepare($sql);
@@ -88,14 +96,13 @@ $budget = (float)($company['budget_amount'] ?? 0);
 foreach ($stmt->fetchAll() as $row) {
     $price = (float)($row['new_purchase_price'] ?? 0);
 
+    $row['engine_type'] = strtoupper(trim((string)($row['engine_type'] ?? '')));
     $row['currency_code'] = $row['currency_code'] ?: ($company['currency_code'] ?? 'EUR');
     $row['purchase_rule'] = 'BUDGET_ONLY';
     $row['budget_amount'] = number_format($budget, 2, '.', '');
     $row['can_afford'] = $budget >= $price;
 
-    /*
-     * Compatibility fields kept for the current UI, but they no longer block purchase.
-     */
+    /* Compatibility fields kept for the current UI, but they no longer block purchase. */
     $row['current_qualified_pilots'] = null;
     $row['required_pilots_after_purchase'] = null;
     $row['pilot_coverage_ok_after_purchase'] = true;
@@ -120,9 +127,6 @@ json_response([
         'currency_code' => $company['currency_code'] ?? 'EUR',
         'rule' => 'Only the company budget can block aircraft purchase.',
     ],
-    /*
-     * Legacy key kept so older JS does not break.
-     */
     'pilot_coverage' => [
         'current_qualified_pilots' => null,
         'required_pilots_for_current_fleet' => null,
