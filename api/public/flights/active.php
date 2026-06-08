@@ -4,13 +4,33 @@ declare(strict_types=1);
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
 require __DIR__ . '/../../lib/flight-completion.php';
+require_once __DIR__ . '/../../lib/scheduled-service-dispatcher.php';
 
 $session = require_auth_session();
 $companyId = $session['company_id'];
 
-complete_due_flights(db(), $companyId);
+$pdo = db();
 
-$stmt = db()->prepare("
+if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+    try {
+        $pdo->beginTransaction();
+        process_due_scheduled_services($pdo, (int)$companyId, 240, false);
+        $pdo->commit();
+    } catch (Throwable $exception) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+
+        /*
+         * The map must remain usable even if automatic dispatch fails.
+         * The active flight layer will simply keep showing currently active flights.
+         */
+    }
+}
+
+complete_due_flights($pdo, $companyId);
+
+$stmt = $pdo->prepare("
     SELECT *
     FROM v_active_flights_map
     WHERE company_id = :company_id

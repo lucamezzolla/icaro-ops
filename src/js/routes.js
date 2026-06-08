@@ -4,6 +4,7 @@ const API = {
   detail: id => `api/public/routes/detail.php?serviceId=${encodeURIComponent(id)}`,
   preview: "api/public/routes/preview.php",
   startServiceFlight: "api/public/flights/start-service-now.php",
+  processDueRoutes: "api/public/dispatch/process-due-routes.php",
   removeService: "api/public/routes/delete.php",
   aircraftByIcao: code => `api/public/fleet/model-by-icao.php?icao=${encodeURIComponent(code)}`,
   availableAircraft: id => `api/public/flights/available-aircraft.php?service_id=${encodeURIComponent(id)}`,
@@ -33,11 +34,22 @@ async function loadFlights() {
   hideError();
 
   try {
+    await processDueScheduledFlights();
     flights = await getJson(API.routes);
     renderSummary(flights);
     renderFlights(flights);
   } catch (error) {
     showError(error.message || "Unable to load flights.");
+  }
+}
+
+async function processDueScheduledFlights() {
+  try {
+    await postJson(API.processDueRoutes, {
+      window_minutes: 120
+    });
+  } catch (error) {
+    console.warn("Unable to process due scheduled flights.", error);
   }
 }
 

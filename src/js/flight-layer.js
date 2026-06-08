@@ -16,6 +16,7 @@ const ICARO_FLIGHT_API = {
 let icaroFlightLayer = null;
 let icaroSelectedFlightRouteLayer = null;
 let icaroSelectedFlightPathLayer = null;
+const ICARO_FLIGHT_REFRESH_MS = 5000;
 
 document.addEventListener("DOMContentLoaded", () => {
   setTimeout(initIcaroFlightLayer, 500);
@@ -29,7 +30,15 @@ function initIcaroFlightLayer() {
   icaroFlightLayer = L.layerGroup().addTo(window.icaroOpsMap);
 
   refreshIcaroFlights();
-  setInterval(refreshIcaroFlights, 15000);
+  setInterval(refreshIcaroFlights, ICARO_FLIGHT_REFRESH_MS);
+
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      refreshIcaroFlights();
+    }
+  });
+
+  window.addEventListener("focus", refreshIcaroFlights);
 }
 
 async function refreshIcaroFlights() {
