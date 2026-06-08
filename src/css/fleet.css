@@ -752,3 +752,96 @@ td.buy-rule,
   outline: 2px solid rgba(255,255,255,.35);
   outline-offset: 2px;
 }
+
+
+/* Owned aircraft detail image: hover hint + enlarged preview dialog */
+.aircraft-detail-image-zoom-trigger {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  cursor: zoom-in;
+  overflow: hidden;
+}
+
+.aircraft-detail-image-zoom-trigger img {
+  max-width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border-radius: 14px;
+  transition:
+    transform .18s ease,
+    filter .18s ease,
+    box-shadow .18s ease;
+}
+
+.aircraft-detail-image-zoom-trigger:hover img,
+.aircraft-detail-image-zoom-trigger:focus-visible img {
+  transform: scale(1.045);
+}
+
+.aircraft-detail-image-zoom-trigger:focus-visible {
+  outline: 2px solid rgba(255,255,255,.45);
+  outline-offset: 4px;
+}
+
+.image-dialog-body {
+  display: grid;
+  place-items: center;
+}
+
+#aircraftImagePreview {
+  width: auto;
+  max-width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  border-radius: 16px;
+}
+
+
+/* Aircraft detail image hover/click preview without color change */
+.aircraft-detail-image-zoom-trigger {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  cursor: zoom-in;
+  overflow: hidden;
+}
+
+.aircraft-detail-image-zoom-trigger img {
+  max-width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  border-radius: 14px;
+  transition: transform .18s ease;
+}
+
+.aircraft-detail-image-zoom-trigger:hover img,
+.aircraft-detail-image-zoom-trigger:focus-visible img {
+  transform: scale(1.045);
+}
+
+.aircraft-detail-image-zoom-trigger:focus-visible {
+  outline: 2px solid rgba(255,255,255,.45);
+  outline-offset: 4px;
+}
+
+.image-dialog-body {
+  display: grid;
+  place-items: center;
+}
+
+#aircraftImagePreview {
+  width: auto;
+  max-width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  border-radius: 16px;
+}
