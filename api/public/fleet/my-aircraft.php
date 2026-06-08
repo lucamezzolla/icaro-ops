@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
+require __DIR__ . '/../../lib/aircraft-images.php';
 require __DIR__ . '/../../lib/session.php';
 
 $session = require_auth_session();
@@ -47,7 +48,7 @@ $stmt = $pdo->prepare("
     ORDER BY ca.id
 ");
 $stmt->execute(['company_id' => $companyId]);
-$aircraft = $stmt->fetchAll();
+$aircraft = attach_aircraft_image_asset_paths($stmt->fetchAll());
 
 $qualifiedPilots = count_qualified_pilots($pdo, $companyId, 'C208_TYPE');
 $totalAircraft = count($aircraft);

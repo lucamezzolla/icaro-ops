@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
+require __DIR__ . '/../../lib/aircraft-images.php';
 require __DIR__ . '/../../lib/session.php';
 
 $session = require_auth_session();
@@ -57,11 +58,6 @@ $sql = "
       id,
       manufacturer,
       model_name,
-      CASE
-        WHEN UPPER(TRIM(COALESCE(model_name, ''))) LIKE CONCAT(UPPER(TRIM(COALESCE(manufacturer, ''))), '%')
-          THEN TRIM(COALESCE(model_name, ''))
-        ELSE TRIM(CONCAT(TRIM(COALESCE(manufacturer, '')), ' ', TRIM(COALESCE(model_name, ''))))
-      END AS display_name,
       model_code,
       icao_type_code,
       {$engineTypeExpr} AS engine_type,
@@ -79,12 +75,10 @@ $sql = "
       is_endgame,
       unlock_reputation_score
     FROM aircraft_models
-    WHERE COALESCE(is_active, 1) = 1
     ORDER BY
-      display_name,
-      icao_type_code,
-      model_code
-
+      COALESCE({$priceColumn}, 0),
+      manufacturer,
+      model_name
 ";
 
 $stmt = $pdo->prepare($sql);
@@ -109,8 +103,9 @@ foreach ($stmt->fetchAll() as $row) {
     $row['required_license'] = null;
     $row['unlock_status'] = 'AVAILABLE_FOR_DEVELOPMENT_TEST';
     $row['unlock_note'] = 'Development mode: all aircraft are visible. Purchase is limited only by budget.';
+    $row['is_available_for_current_level'] = true;
 
-    $aircraft[] = $row;
+    $aircraft[] = attach_aircraft_image_asset_path($row);
 }
 
 json_response([

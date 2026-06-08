@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
+require __DIR__ . '/../../lib/aircraft-images.php';
 require __DIR__ . '/../../lib/session.php';
 
 $session = require_auth_session();
@@ -45,6 +46,8 @@ $aircraft = $stmt->fetch();
 if (!$aircraft) {
     json_response(['error' => 'AIRCRAFT_NOT_FOUND'], 404);
 }
+
+$aircraft = attach_aircraft_image_asset_path($aircraft);
 
 $flightStmt = $pdo->prepare("
     SELECT

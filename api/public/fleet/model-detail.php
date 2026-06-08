@@ -36,6 +36,7 @@ function resolve_aircraft_model_id_from_request(PDO $pdo): int
     return 0;
 }
 require __DIR__ . '/../../lib/bootstrap.php';
+require __DIR__ . '/../../lib/aircraft-images.php';
 require __DIR__ . '/../../lib/session.php';
 
 require_auth_session();
@@ -92,6 +93,12 @@ $model = $stmt->fetch();
 if (!$model) {
     json_response(['error' => 'AIRCRAFT_MODEL_NOT_FOUND'], 404);
 }
+
+$model = attach_aircraft_image_asset_path($model);
+$model['purchase_rule'] = 'BUDGET_ONLY';
+$model['is_available_for_current_level'] = true;
+$model['unlock_status'] = 'AVAILABLE_FOR_DEVELOPMENT_TEST';
+$model['unlock_note'] = 'Development mode: all aircraft are visible. Purchase is limited only by budget.';
 
 json_response(['model' => $model]);
 
