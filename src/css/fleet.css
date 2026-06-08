@@ -737,3 +737,18 @@ td.buy-rule,
 .aircraft-market-filter-summary {
   margin: .5rem 0 0;
 }
+
+
+/* Aircraft market focus and catalog detail footer buy button */
+.aircraft-buy-footer-button {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  font-weight: 800;
+}
+
+.aircraft-market-filter-panel input:focus,
+.aircraft-market-filter-panel select:focus {
+  outline: 2px solid rgba(255,255,255,.35);
+  outline-offset: 2px;
+}

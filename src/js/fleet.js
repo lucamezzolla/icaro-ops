@@ -513,26 +513,50 @@ function wireAircraftMarketFilters(root) {
   const maxPrice = root.querySelector("#aircraftMarketMaxPrice");
   const clear = root.querySelector("#aircraftMarketClearFilters");
 
-  const refresh = () => renderCatalog(catalogAircraft);
+  const refreshKeepingFocus = sourceElement => {
+    const activeId = sourceElement?.id || document.activeElement?.id || "";
+    const selectionStart = sourceElement && "selectionStart" in sourceElement ? sourceElement.selectionStart : null;
+    const selectionEnd = sourceElement && "selectionEnd" in sourceElement ? sourceElement.selectionEnd : null;
+
+    renderCatalog(catalogAircraft);
+
+    if (!activeId) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      const next = document.querySelector(`#${CSS.escape(activeId)}`);
+
+      if (!next) {
+        return;
+      }
+
+      next.focus({ preventScroll: true });
+
+      if (selectionStart !== null && selectionEnd !== null && typeof next.setSelectionRange === "function") {
+        next.setSelectionRange(selectionStart, selectionEnd);
+      }
+    });
+  };
 
   search?.addEventListener("input", () => {
     catalogFilterState.search = search.value;
-    refresh();
+    refreshKeepingFocus(search);
   });
 
   manufacturer?.addEventListener("change", () => {
     catalogFilterState.manufacturer = manufacturer.value;
-    refresh();
+    refreshKeepingFocus(manufacturer);
   });
 
   engine?.addEventListener("change", () => {
     catalogFilterState.engineType = engine.value;
-    refresh();
+    refreshKeepingFocus(engine);
   });
 
   maxPrice?.addEventListener("input", () => {
     catalogFilterState.maxPrice = maxPrice.value;
-    refresh();
+    refreshKeepingFocus(maxPrice);
   });
 
   clear?.addEventListener("click", () => {
@@ -543,7 +567,11 @@ function wireAircraftMarketFilters(root) {
       maxPrice: ""
     };
 
-    refresh();
+    renderCatalog(catalogAircraft);
+
+    requestAnimationFrame(() => {
+      document.querySelector("#aircraftMarketSearch")?.focus({ preventScroll: true });
+    });
   });
 }
 
@@ -641,28 +669,53 @@ async function openCatalogModelDetail(modelId) {
         ])}
       </div>
 
-      <div class="dialog-action-bar">
-        <button type="button" ${m.is_available_for_current_level ? "" : "disabled"} id="buyModelFromDetailButton">
-          Buy this aircraft
-        </button>
-      </div>
     `;
 
-    const buyButton = content.querySelector("#buyModelFromDetailButton");
-    if (buyButton && m.is_available_for_current_level) {
-      buyButton.addEventListener("click", async () => {
-        const purchased = await buyAircraft(Number(m.aircraft_model_id || m.id));
-
-        if (purchased) {
-          detailDialog.close();
-        }
-      });
-    }
+    setCatalogModelDetailBuyFooter(m, detailDialog);
   } catch (error) {
     content.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load aircraft model detail.")}</div>`;
   }
 }
 
+
+function setCatalogModelDetailBuyFooter(model, detailDialog) {
+  const footer = document.querySelector("#aircraftDetailDialog .dialog-footer");
+
+  if (!footer) {
+    return;
+  }
+
+  const modelId = Number(model.aircraft_model_id || model.id || 0);
+  const canBuy = Boolean(model.is_available_for_current_level) && Number.isInteger(modelId) && modelId > 0;
+
+  footer.innerHTML = `
+    <div class="dialog-footer-actions">
+      <button
+        type="button"
+        class="primary-button aircraft-buy-footer-button"
+        id="buyModelFromDetailButton"
+        ${canBuy ? "" : "disabled"}
+        title="${canBuy ? "Buy this aircraft" : "This aircraft cannot be bought right now"}"
+      >
+        <span aria-hidden="true">💰</span>
+        <span>Buy this aircraft</span>
+      </button>
+    </div>
+    <button value="close">Close</button>
+  `;
+
+  const buyButton = footer.querySelector("#buyModelFromDetailButton");
+
+  if (buyButton && canBuy) {
+    buyButton.addEventListener("click", async () => {
+      const purchased = await buyAircraft(modelId);
+
+      if (purchased) {
+        detailDialog.close();
+      }
+    });
+  }
+}
 
 async function buyAircraft(aircraftModelId) {
   const error = document.querySelector("#buyAircraftError");
