@@ -8,6 +8,12 @@ const API = {
 
 let ownedAircraft = [];
 let catalogAircraft = [];
+let catalogFilterState = {
+  search: "",
+  manufacturer: "",
+  engineType: "",
+  maxPrice: ""
+};
 let fleetSortState = { key: null, direction: "asc" };
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -354,26 +360,126 @@ async function openBuyDialog() {
 
 
 
-function renderCatalog(rows, pilotCoverage) {
+function renderCatalog(rows, pilotCoverage = {}) {
   const list = document.querySelector("#aircraftCatalogList");
+  const activeRows = rows.filter(isCatalogAircraftActive);
+  const filteredRows = filteredCatalogRows(activeRows);
 
-  if (!rows.length) {
+  if (!activeRows.length) {
     list.innerHTML = `<p class="muted">No aircraft available for your current level.</p>`;
     return;
   }
 
   list.innerHTML = `
-<div class="table-wrap catalog-table-wrap">
+    ${renderAircraftMarketFilters(activeRows, filteredRows.length)}
+    ${
+      filteredRows.length
+        ? renderAircraftMarketTable(filteredRows)
+        : `<p class="muted">No aircraft match the current filters.</p>`
+    }
+  `;
+
+  wireAircraftMarketFilters(list);
+
+  list.querySelectorAll("[data-buy-model]").forEach(button => {
+    button.addEventListener("click", () => buyAircraft(Number(button.dataset.buyModel)));
+  });
+
+  list.querySelectorAll("[data-model-detail]").forEach(button => {
+    button.addEventListener("click", () => openCatalogModelDetail(Number(button.dataset.modelDetail)));
+  });
+}
+
+
+
+
+function isCatalogAircraftActive(a) {
+  const value = a.is_active;
+
+  if (value === undefined || value === null || value === "") {
+    return true;
+  }
+
+  return Number(value) === 1 || value === true || String(value).toLowerCase() === "true";
+}
+
+function renderAircraftMarketFilters(rows, visibleCount) {
+  const manufacturers = uniqueSorted(rows.map(a => a.manufacturer).filter(Boolean));
+  const engineTypes = uniqueSorted(rows.map(a => a.engine_type || a.engine || a.engine_family).filter(Boolean));
+
+  return `
+    <section class="aircraft-market-filter-panel" aria-label="Aircraft market filters">
+      <div class="aircraft-market-filters">
+        <label>
+          <span>Search</span>
+          <input
+            type="search"
+            id="aircraftMarketSearch"
+            placeholder="Model, manufacturer, ICAO..."
+            value="${escapeHtml(catalogFilterState.search)}"
+          >
+        </label>
+
+        <label>
+          <span>Manufacturer</span>
+          <select id="aircraftMarketManufacturer">
+            <option value="">All manufacturers</option>
+            ${manufacturers.map(value => `
+              <option value="${escapeHtml(value)}" ${catalogFilterState.manufacturer === value ? "selected" : ""}>
+                ${escapeHtml(value)}
+              </option>
+            `).join("")}
+          </select>
+        </label>
+
+        <label>
+          <span>Engine</span>
+          <select id="aircraftMarketEngine">
+            <option value="">All engines</option>
+            ${engineTypes.map(value => `
+              <option value="${escapeHtml(value)}" ${catalogFilterState.engineType === value ? "selected" : ""}>
+                ${escapeHtml(value)}
+              </option>
+            `).join("")}
+          </select>
+        </label>
+
+        <label>
+          <span>Max price</span>
+          <input
+            type="number"
+            id="aircraftMarketMaxPrice"
+            min="0"
+            step="1000"
+            placeholder="No limit"
+            value="${escapeHtml(catalogFilterState.maxPrice)}"
+          >
+        </label>
+
+        <button type="button" class="secondary" id="aircraftMarketClearFilters">Clear filters</button>
+      </div>
+
+      <p class="muted aircraft-market-filter-summary">
+        Showing ${visibleCount} of ${rows.length} active aircraft.
+      </p>
+    </section>
+  `;
+}
+
+function renderAircraftMarketTable(rows) {
+  return `
+    <div class="table-wrap catalog-table-wrap">
       <table>
         <thead>
           <tr>
             <th>Aircraft</th>
             <th>ICAO</th>
+            <th>Engine</th>
             <th>Capacity</th>
             <th>Range</th>
             <th>Cruise</th>
             <th>Price</th>
-<th></th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -381,6 +487,7 @@ function renderCatalog(rows, pilotCoverage) {
             <tr>
               <td><strong>${escapeHtml(a.manufacturer)} ${escapeHtml(a.model_name)}</strong></td>
               <td>${escapeHtml(a.icao_type_code || "-")}</td>
+              <td>${escapeHtml(a.engine_type || a.engine || a.engine_family || "-")}</td>
               <td>${escapeHtml(a.passenger_capacity_standard ?? "-")}</td>
               <td>${escapeHtml(a.range_km ?? "-")} km</td>
               <td>${escapeHtml(a.cruise_speed_kmh ?? "-")} km/h</td>
@@ -397,18 +504,93 @@ function renderCatalog(rows, pilotCoverage) {
       </table>
     </div>
   `;
+}
 
-  list.querySelectorAll("[data-buy-model]").forEach(button => {
-    button.addEventListener("click", () => buyAircraft(Number(button.dataset.buyModel)));
+function wireAircraftMarketFilters(root) {
+  const search = root.querySelector("#aircraftMarketSearch");
+  const manufacturer = root.querySelector("#aircraftMarketManufacturer");
+  const engine = root.querySelector("#aircraftMarketEngine");
+  const maxPrice = root.querySelector("#aircraftMarketMaxPrice");
+  const clear = root.querySelector("#aircraftMarketClearFilters");
+
+  const refresh = () => renderCatalog(catalogAircraft);
+
+  search?.addEventListener("input", () => {
+    catalogFilterState.search = search.value;
+    refresh();
   });
 
-  list.querySelectorAll("[data-model-detail]").forEach(button => {
-    button.addEventListener("click", () => openCatalogModelDetail(Number(button.dataset.modelDetail)));
+  manufacturer?.addEventListener("change", () => {
+    catalogFilterState.manufacturer = manufacturer.value;
+    refresh();
+  });
+
+  engine?.addEventListener("change", () => {
+    catalogFilterState.engineType = engine.value;
+    refresh();
+  });
+
+  maxPrice?.addEventListener("input", () => {
+    catalogFilterState.maxPrice = maxPrice.value;
+    refresh();
+  });
+
+  clear?.addEventListener("click", () => {
+    catalogFilterState = {
+      search: "",
+      manufacturer: "",
+      engineType: "",
+      maxPrice: ""
+    };
+
+    refresh();
   });
 }
 
+function filteredCatalogRows(rows) {
+  const query = catalogFilterState.search.trim().toLowerCase();
+  const manufacturer = catalogFilterState.manufacturer;
+  const engineType = catalogFilterState.engineType;
+  const maxPrice = Number(catalogFilterState.maxPrice);
 
+  return rows.filter(a => {
+    if (manufacturer && a.manufacturer !== manufacturer) {
+      return false;
+    }
 
+    const rowEngine = a.engine_type || a.engine || a.engine_family || "";
+
+    if (engineType && rowEngine !== engineType) {
+      return false;
+    }
+
+    if (Number.isFinite(maxPrice) && maxPrice > 0 && Number(a.new_purchase_price || 0) > maxPrice) {
+      return false;
+    }
+
+    if (!query) {
+      return true;
+    }
+
+    const haystack = [
+      a.manufacturer,
+      a.model_name,
+      a.model_code,
+      a.icao_type_code,
+      a.engine_type,
+      a.engine,
+      a.engine_family,
+      a.operation_role
+    ].join(" ").toLowerCase();
+
+    return haystack.includes(query);
+  });
+}
+
+function uniqueSorted(values) {
+  return [...new Set(values.map(value => String(value || "").trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
 
 async function openCatalogModelDetail(modelId) {
   const detailDialog = document.querySelector("#aircraftDetailDialog");
