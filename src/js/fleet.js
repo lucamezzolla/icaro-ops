@@ -235,6 +235,7 @@ async function openAircraftDetail(aircraftId) {
     title.textContent = `${a.registration_code} · ${a.manufacturer} ${a.model_name}`;
     setAircraftDetailFooter(a.aircraft_id || aircraftId);
     content.innerHTML = renderAircraftDetail(a, data.recent_flights || []);
+    bindAircraftDetailImageButtons(content);
   } catch (error) {
     resetAircraftDetailFooter();
     content.innerHTML = `<div class="page-error">${escapeHtml(error.message || "Unable to load aircraft detail.")}</div>`;
@@ -307,9 +308,9 @@ function aircraftDetailImageBlock(a) {
   const aircraftName = `${a.manufacturer || ""} ${a.model_name || ""}`.trim() || "Aircraft";
 
   return `
-    <div class="model-image-wrap owned-aircraft-image-wrap">
+    <button type="button" class="aircraft-detail-image-button" data-aircraft-image-inline="${escapeHtml(a.aircraft_id || "")}" title="Open larger image">
       <img src="${escapeHtml(path)}" alt="${escapeHtml(aircraftName)}">
-    </div>
+    </button>
   `;
 }
 
@@ -317,11 +318,32 @@ function hasAircraftImage(a) {
   return Boolean(String(a?.image_asset_path || "").trim());
 }
 
-function openAircraftImage(aircraftId) {
-  const a = ownedAircraft.find(item => Number(item.aircraft_id) === Number(aircraftId));
-  if (!a) return;
+function bindAircraftDetailImageButtons(root = document) {
+  root.querySelectorAll("[data-aircraft-image-inline]").forEach(button => {
+    button.addEventListener("click", () => {
+      const aircraftId = Number(button.dataset.aircraftImageInline);
 
-  const path = String(a.image_asset_path || "").trim();
+      if (Number.isInteger(aircraftId) && aircraftId > 0) {
+        openAircraftImage(aircraftId);
+      }
+    });
+  });
+}
+
+function bindCatalogModelImageButtons(root = document) {
+  root.querySelectorAll("[data-catalog-model-image-src]").forEach(button => {
+    button.addEventListener("click", () => {
+      openImagePreviewDialog(
+        button.dataset.catalogModelImageTitle || "Aircraft",
+        button.dataset.catalogModelImageSrc || "",
+        button.dataset.catalogModelImageAlt || "Aircraft preview"
+      );
+    });
+  });
+}
+
+function openImagePreviewDialog(title, src, alt) {
+  const path = String(src || "").trim();
 
   if (!path) {
     showFleetError("No image is available for this aircraft model yet.");
@@ -329,11 +351,23 @@ function openAircraftImage(aircraftId) {
   }
 
   const dialog = document.querySelector("#aircraftImageDialog");
-  document.querySelector("#aircraftImageTitle").textContent = `${a.manufacturer} ${a.model_name}`;
+  document.querySelector("#aircraftImageTitle").textContent = title || "Aircraft";
   const img = document.querySelector("#aircraftImagePreview");
   img.src = path;
-  img.alt = `${a.manufacturer} ${a.model_name}`;
+  img.alt = alt || title || "Aircraft preview";
   dialog.showModal();
+}
+
+function openAircraftImage(aircraftId) {
+  const a = ownedAircraft.find(item => Number(item.aircraft_id) === Number(aircraftId));
+  if (!a) return;
+
+  const aircraftName = `${a.manufacturer || ""} ${a.model_name || ""}`.trim() || "Aircraft";
+  openImagePreviewDialog(
+    aircraftName,
+    a.image_asset_path || "",
+    aircraftName
+  );
 }
 
 async function openBuyDialog() {
@@ -428,7 +462,7 @@ async function openCatalogModelDetail(modelId) {
 
     content.innerHTML = `
       <div class="model-image-wrap">
-        ${m.image_asset_path ? `<img src="${escapeHtml(m.image_asset_path)}" alt="${escapeHtml(m.manufacturer)} ${escapeHtml(m.model_name)}">` : `<p class="muted">No image available.</p>`}
+        ${m.image_asset_path ? `<button type="button" class="aircraft-detail-image-button" data-catalog-model-image-src="${escapeHtml(m.image_asset_path)}" data-catalog-model-image-title="${escapeHtml(m.manufacturer)} ${escapeHtml(m.model_name)}" data-catalog-model-image-alt="${escapeHtml(m.manufacturer)} ${escapeHtml(m.model_name)}" title="Open larger image"><img src="${escapeHtml(m.image_asset_path)}" alt="${escapeHtml(m.manufacturer)} ${escapeHtml(m.model_name)}"></button>` : `<p class="muted">No image available.</p>`}
       </div>
 
       <div class="detail-grid">
@@ -465,6 +499,8 @@ async function openCatalogModelDetail(modelId) {
         </button>
       </div>
     `;
+
+    bindCatalogModelImageButtons(content);
 
     const buyButton = content.querySelector("#buyModelFromDetailButton");
     if (buyButton && m.is_available_for_current_level) {

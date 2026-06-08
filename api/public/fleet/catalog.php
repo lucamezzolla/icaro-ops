@@ -75,6 +75,7 @@ $sql = "
       is_endgame,
       unlock_reputation_score
     FROM aircraft_models
+    WHERE COALESCE(is_active, 1) = 1
     ORDER BY
       COALESCE({$priceColumn}, 0),
       manufacturer,

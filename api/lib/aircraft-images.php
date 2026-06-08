@@ -2,15 +2,16 @@
 declare(strict_types=1);
 
 /**
- * Resolve the web asset path for an aircraft model image.
+ * Aircraft image resolver.
  *
- * Priority:
- * 1. Existing aircraft_models.image_asset_path, if it points to an existing local file or to an external URL.
- * 2. Canonical numbered file: src/assets/aircraft/001_*.png, 041_*.png, 290_*.png.
- * 3. Legacy non-numbered files generated before the numeric naming rule:
- *    c208b_grand_caravan_ex.png, airbus_a220_100.png, concorde.png, etc.
+ * It connects DB aircraft models to PNG files placed in:
  *
- * This keeps the game compatible with both the new numbered collection and the old legacy images.
+ *   src/assets/aircraft/
+ *
+ * It supports:
+ * - numbered files: 290_socata_tbm_700.png
+ * - legacy files: c208b_grand_caravan_ex.png, concorde.png, airbus_a220_100.png
+ * - existing aircraft_models.image_asset_path values
  */
 function aircraft_image_asset_path_from_row(array $row): string
 {
@@ -33,9 +34,6 @@ function aircraft_image_asset_path_from_row(array $row): string
     return aircraft_image_asset_path_by_row_candidates($row);
 }
 
-/**
- * Add/normalize image_asset_path in one row.
- */
 function attach_aircraft_image_asset_path(array $row): array
 {
     $row['image_asset_path'] = aircraft_image_asset_path_from_row($row);
@@ -43,8 +41,6 @@ function attach_aircraft_image_asset_path(array $row): array
 }
 
 /**
- * Add/normalize image_asset_path in multiple rows.
- *
  * @param array<int,array<string,mixed>> $rows
  * @return array<int,array<string,mixed>>
  */
@@ -100,16 +96,11 @@ function aircraft_image_asset_path_by_row_candidates(array $row): string
         }
     }
 
-    $manufacturer = (string)($row['manufacturer'] ?? '');
-    $modelName = (string)($row['model_name'] ?? '');
-    $modelCode = (string)($row['model_code'] ?? '');
-    $icaoTypeCode = (string)($row['icao_type_code'] ?? '');
-
     $candidateNames = aircraft_image_candidate_basenames(
-        $manufacturer,
-        $modelName,
-        $modelCode,
-        $icaoTypeCode
+        (string)($row['manufacturer'] ?? ''),
+        (string)($row['model_name'] ?? ''),
+        (string)($row['model_code'] ?? ''),
+        (string)($row['icao_type_code'] ?? '')
     );
 
     foreach ($candidateNames as $basename) {
@@ -121,14 +112,6 @@ function aircraft_image_asset_path_by_row_candidates(array $row): string
     return '';
 }
 
-/**
- * Build candidate legacy filenames from DB fields.
- *
- * Examples:
- * - C208B_GRAND_CARAVAN_EX -> c208b_grand_caravan_ex.png
- * - Airbus + A220-100 -> airbus_a220_100.png
- * - Aérospatiale/BAC + Concorde -> concorde.png and aerospatiale_bac_concorde.png
- */
 function aircraft_image_candidate_basenames(
     string $manufacturer,
     string $modelName,
@@ -145,15 +128,9 @@ function aircraft_image_candidate_basenames(
         }
     }
 
-    /*
-     * Useful simplifications for legacy files:
-     * - "A220-100" -> a220_100
-     * - "DHC-6 Twin Otter Series 400" -> dhc6_twin_otter_400
-     * - "EMB 120ER Brasília" -> emb120er_brasilia
-     */
     $simplifiedModel = aircraft_image_slug(
         str_replace(
-            [' Series ', ' serie ', ' / ', '/', '-', ' '],
+            [' Series ', ' series ', ' / ', '/', '-', ' '],
             [' ', ' ', ' ', ' ', '', '_'],
             $modelName
         )
@@ -169,11 +146,6 @@ function aircraft_image_candidate_basenames(
     foreach (array_values(array_unique($slugs)) as $slug) {
         $candidateNames[] = $slug . '.png';
 
-        /*
-         * Some DB model codes begin with an aircraft-code prefix:
-         * 221_BCS1, 312_A312, 100_F100.
-         * The second part can still be useful.
-         */
         if (preg_match('/^[a-z0-9]+_([a-z0-9_]+)$/', $slug, $matches) === 1) {
             $candidateNames[] = $matches[1] . '.png';
         }
