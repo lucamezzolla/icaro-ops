@@ -47,7 +47,7 @@ function renderStaff(rows) {
     <tr>
       <td><strong>${escapeHtml(s.display_name || s.full_name || "-")}</strong></td>
       <td>${escapeHtml(s.staff_role || "-")}</td>
-      <td><span class="badge ${s.employment_status === "ACTIVE" ? "good" : "warn"}">${escapeHtml(s.employment_status || "-")}</span></td>
+      <td>${staffStatusBadge(s)}</td>
       <td>${escapeHtml(s.reliability_score ?? "-")}</td>
       <td>${escapeHtml(s.fatigue_score ?? "-")}</td>
       <td>${staffCostProfile(s)}</td>
@@ -78,7 +78,7 @@ async function openStaffDetail(staffId) {
         ${section("Identity", [
           ["Name", staff.display_name || staff.full_name],
           ["Role", staff.staff_role],
-          ["Status", staff.employment_status],
+          ["Status", staffEffectiveStatus(staff)],
           ["Hired at UTC", staff.hired_at_utc || staff.created_at_utc]
         ])}
         ${section("Personality", [
@@ -198,6 +198,29 @@ function costProfile(staff) {
   return `${money(staff.salary_per_flight || 0)} ${currency}/leg + ${money(staff.hourly_rate || 0)} ${currency}/h + ${staff.revenue_share_percent || 0}% rev.`;
 }
 
+
+
+
+function staffStatusBadge(s) {
+  const status = staffEffectiveStatus(s);
+  const badgeClass = status === "AVAILABLE" ? "good" : "warn";
+  return `<span class="badge ${badgeClass}">${escapeHtml(status)}</span>`;
+}
+
+function staffEffectiveStatus(s) {
+  const operationalStatus = s.operational_status || "AVAILABLE";
+  const employmentStatus = s.employment_status || "-";
+
+  if (employmentStatus !== "ACTIVE") {
+    return employmentStatus;
+  }
+
+  if (operationalStatus && operationalStatus !== "AVAILABLE") {
+    return operationalStatus === "IN_FLIGHT" ? "IN FLIGHT / BUSY" : operationalStatus;
+  }
+
+  return "AVAILABLE";
+}
 
 function staffCostProfile(staff) {
   const currency = staff.currency_code || "EUR";

@@ -366,12 +366,12 @@ function renderSelectedBase(base) {
     ${summaryRow("Country", base.country_name)}
     ${summaryRow("Airport size", base.airport_size_tier)}
     ${summaryRow("Max bases", base.max_total_bases)}
-    ${summaryRow("Aircraft", `${base.aircraft_owned_count} / ${base.max_aircraft_managed}`)}
-    ${summaryRow("At base", `${base.aircraft_at_base_count} / ${base.max_aircraft_on_ground}`)}
-    ${summaryRow("In flight", base.aircraft_in_flight_count)}
-    ${summaryRow("Maintenance", base.aircraft_maintenance_count)}
-    ${summaryRow("Free fleet slots", base.free_managed_aircraft_slots)}
-    ${summaryRow("Free ground slots", base.free_ground_aircraft_slots)}
+    ${summaryRow("Base managed aircraft", `${base.aircraft_owned_count} / ${base.max_aircraft_managed}`)}
+    ${summaryRow("On ground at current base", `${base.aircraft_at_base_count} / ${base.max_aircraft_on_ground}`)}
+    ${summaryRow("Company aircraft in flight", base.aircraft_in_flight_count)}
+    ${summaryRow("Company aircraft in maintenance", base.aircraft_maintenance_count)}
+    ${summaryRow("Free base fleet slots", base.free_managed_aircraft_slots)}
+    ${summaryRow("Free base ground slots", freeGroundSlotsFromBase(base))}
   `;
 
   renderMarketSummary(base);
@@ -396,10 +396,10 @@ function renderCompanyFallback(company) {
     ${summaryRow("Base", `${airport.icao_code}${airport.iata_code ? " / " + airport.iata_code : ""}`)}
     ${summaryRow("Airport", airport.airport_name)}
     ${summaryRow("Country", airport.country_name)}
-    ${summaryRow("Aircraft", `${airport.aircraft_owned_count} / ${airport.max_aircraft_managed}`)}
-    ${summaryRow("At base", `${airport.aircraft_at_base_count} / ${airport.max_aircraft_on_ground}`)}
-    ${summaryRow("In flight", airport.aircraft_in_flight_count)}
-    ${summaryRow("Maintenance", airport.aircraft_maintenance_count)}
+    ${summaryRow("Base managed aircraft", `${airport.aircraft_owned_count} / ${airport.max_aircraft_managed}`)}
+    ${summaryRow("On ground at current base", `${airport.aircraft_at_base_count} / ${airport.max_aircraft_on_ground}`)}
+    ${summaryRow("Company aircraft in flight", airport.aircraft_in_flight_count)}
+    ${summaryRow("Company aircraft in maintenance", airport.aircraft_maintenance_count)}
   `;
 
   renderMarketSummary(airport);
@@ -713,34 +713,35 @@ function escapeHtml(value) {
 
     setPanelValue("Reputation", `${reputation}/100`, reputationClass(reputation));
 
-    setPanelValueIfPresent("Aircraft", formatPair(
+    setPanelValueIfPresent("Base managed aircraft", formatPair(
       firstDefined(capacity.aircraft_owned_count, data.aircraft_owned_count),
       firstDefined(capacity.max_aircraft_managed, data.max_aircraft_managed)
     ));
 
-    setPanelValueIfPresent("At base", formatPair(
+    setPanelValueIfPresent("On ground at current base", formatPair(
       firstDefined(capacity.aircraft_at_base_count, data.aircraft_at_base_count),
       firstDefined(capacity.max_aircraft_on_ground, data.max_aircraft_on_ground)
     ));
 
-    setPanelValueIfPresent("In flight", firstDefined(
-      capacity.aircraft_in_flight_count,
-      data.aircraft_in_flight_count
+    setPanelValueIfPresent("Company aircraft in flight", firstDefined(
+      data.aircraft_in_flight_count,
+      capacity.aircraft_in_flight_count
     ));
 
-    setPanelValueIfPresent("Maintenance", firstDefined(
-      capacity.aircraft_maintenance_count,
-      data.aircraft_maintenance_count
+    setPanelValueIfPresent("Company aircraft in maintenance", firstDefined(
+      data.aircraft_maintenance_count,
+      capacity.aircraft_maintenance_count
     ));
 
-    setPanelValueIfPresent("Free fleet slots", firstDefined(
+    setPanelValueIfPresent("Free base fleet slots", firstDefined(
       capacity.free_managed_aircraft_slots,
       data.free_managed_aircraft_slots
     ));
 
-    setPanelValueIfPresent("Free ground slots", firstDefined(
+    setPanelValueIfPresent("Free base ground slots", firstDefined(
       capacity.free_ground_aircraft_slots,
-      data.free_ground_aircraft_slots
+      data.free_ground_aircraft_slots,
+      freeGroundSlotsFromCapacity(capacity, data)
     ));
   }
 
@@ -911,34 +912,35 @@ function escapeHtml(value) {
     setValue("Budget", `${formatMoney(budget)} ${currency}`);
     setValue("Reputation", `${reputation}/100`, reputation < 51 ? "bad" : "");
 
-    setValueIfPresent("Aircraft", formatPair(
+    setValueIfPresent("Base managed aircraft", formatPair(
       firstDefined(capacity.aircraft_owned_count, capacity.aircraft_count, data.aircraft_owned_count),
       firstDefined(capacity.max_aircraft_managed, data.max_aircraft_managed)
     ));
 
-    setValueIfPresent("At base", formatPair(
+    setValueIfPresent("On ground at current base", formatPair(
       firstDefined(capacity.aircraft_at_base_count, data.aircraft_at_base_count),
       firstDefined(capacity.max_aircraft_on_ground, data.max_aircraft_on_ground)
     ));
 
-    setValueIfPresent("In flight", firstDefined(
-      capacity.aircraft_in_flight_count,
-      data.aircraft_in_flight_count
+    setValueIfPresent("Company aircraft in flight", firstDefined(
+      data.aircraft_in_flight_count,
+      capacity.aircraft_in_flight_count
     ));
 
-    setValueIfPresent("Maintenance", firstDefined(
-      capacity.aircraft_maintenance_count,
-      data.aircraft_maintenance_count
+    setValueIfPresent("Company aircraft in maintenance", firstDefined(
+      data.aircraft_maintenance_count,
+      capacity.aircraft_maintenance_count
     ));
 
-    setValueIfPresent("Free fleet slots", firstDefined(
+    setValueIfPresent("Free base fleet slots", firstDefined(
       capacity.free_managed_aircraft_slots,
       data.free_managed_aircraft_slots
     ));
 
-    setValueIfPresent("Free ground slots", firstDefined(
+    setValueIfPresent("Free base ground slots", firstDefined(
       capacity.free_ground_aircraft_slots,
-      data.free_ground_aircraft_slots
+      data.free_ground_aircraft_slots,
+      freeGroundSlotsFromCapacity(capacity, data)
     ));
   }
 
@@ -1053,34 +1055,35 @@ function escapeHtml(value) {
     setValue("Budget", `${formatMoney(budget)} ${currency}`);
     setValue("Reputation", `${reputation}/100`, reputation < 51 ? "bad" : "");
 
-    setValueIfPresent("Aircraft", formatPair(
+    setValueIfPresent("Base managed aircraft", formatPair(
       firstDefined(capacity.aircraft_owned_count, capacity.aircraft_count, data.aircraft_owned_count),
       firstDefined(capacity.max_aircraft_managed, data.max_aircraft_managed)
     ));
 
-    setValueIfPresent("At base", formatPair(
+    setValueIfPresent("On ground at current base", formatPair(
       firstDefined(capacity.aircraft_at_base_count, data.aircraft_at_base_count),
       firstDefined(capacity.max_aircraft_on_ground, data.max_aircraft_on_ground)
     ));
 
-    setValueIfPresent("In flight", firstDefined(
-      capacity.aircraft_in_flight_count,
-      data.aircraft_in_flight_count
+    setValueIfPresent("Company aircraft in flight", firstDefined(
+      data.aircraft_in_flight_count,
+      capacity.aircraft_in_flight_count
     ));
 
-    setValueIfPresent("Maintenance", firstDefined(
-      capacity.aircraft_maintenance_count,
-      data.aircraft_maintenance_count
+    setValueIfPresent("Company aircraft in maintenance", firstDefined(
+      data.aircraft_maintenance_count,
+      capacity.aircraft_maintenance_count
     ));
 
-    setValueIfPresent("Free fleet slots", firstDefined(
+    setValueIfPresent("Free base fleet slots", firstDefined(
       capacity.free_managed_aircraft_slots,
       data.free_managed_aircraft_slots
     ));
 
-    setValueIfPresent("Free ground slots", firstDefined(
+    setValueIfPresent("Free base ground slots", firstDefined(
       capacity.free_ground_aircraft_slots,
-      data.free_ground_aircraft_slots
+      data.free_ground_aircraft_slots,
+      freeGroundSlotsFromCapacity(capacity, data)
     ));
   }
 
@@ -1177,12 +1180,12 @@ function escapeHtml(value) {
       setSidebarValue("Budget", `${formatMoney(data.budget_amount)} ${data.currency_code}`);
       setSidebarValue("Reputation", `${Number(data.reputation_score)}/100`, Number(data.reputation_score) < 51 ? "bad" : "");
 
-      setSidebarValue("Aircraft", `${base.aircraft_owned_count} / ${base.max_aircraft_managed}`);
-      setSidebarValue("At base", `${base.aircraft_at_base_count} / ${base.max_aircraft_on_ground}`);
-      setSidebarValue("In flight", base.aircraft_in_flight_count);
-      setSidebarValue("Maintenance", base.aircraft_maintenance_count);
-      setSidebarValue("Free fleet slots", base.free_managed_aircraft_slots);
-      setSidebarValue("Free ground slots", base.free_ground_aircraft_slots);
+      setSidebarValue("Base managed aircraft", `${base.aircraft_owned_count} / ${base.max_aircraft_managed}`);
+      setSidebarValue("On ground at current base", `${base.aircraft_at_base_count} / ${base.max_aircraft_on_ground}`);
+      setSidebarValue("Company aircraft in flight", base.aircraft_in_flight_count);
+      setSidebarValue("Company aircraft in maintenance", base.aircraft_maintenance_count);
+      setSidebarValue("Free base fleet slots", base.free_managed_aircraft_slots);
+      setSidebarValue("Free base ground slots", freeGroundSlotsFromBase(base));
     } catch {
       // Keep dashboard usable during transient API failures.
     }
@@ -1233,3 +1236,37 @@ function escapeHtml(value) {
       .replace(/\s+/g, " ");
   }
 })();
+
+function freeGroundSlotsFromCapacity(capacity = {}, data = {}) {
+  const maxGround = firstDefined(
+    capacity.max_aircraft_on_ground,
+    data.max_aircraft_on_ground
+  );
+  const atBase = firstDefined(
+    capacity.aircraft_at_base_count,
+    data.aircraft_at_base_count
+  );
+
+  if (maxGround === undefined || atBase === undefined) {
+    return undefined;
+  }
+
+  const free = Number(maxGround) - Number(atBase);
+  return Number.isFinite(free) ? Math.max(0, free) : undefined;
+}
+
+function freeGroundSlotsFromBase(base = {}) {
+  if (base.free_ground_aircraft_slots !== undefined && base.free_ground_aircraft_slots !== null && base.free_ground_aircraft_slots !== "") {
+    return base.free_ground_aircraft_slots;
+  }
+
+  const maxGround = base.max_aircraft_on_ground;
+  const atBase = base.aircraft_at_base_count;
+
+  if (maxGround === undefined || maxGround === null || atBase === undefined || atBase === null) {
+    return undefined;
+  }
+
+  const free = Number(maxGround) - Number(atBase);
+  return Number.isFinite(free) ? Math.max(0, free) : undefined;
+}

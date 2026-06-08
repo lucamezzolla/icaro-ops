@@ -66,7 +66,12 @@ $stmt = db()->prepare("
       COALESCE(ps.max_aircraft_on_ground, 0) AS max_aircraft_on_ground,
       COALESCE(ps.aircraft_owned_count, 0) AS aircraft_owned_count,
       COALESCE(ps.aircraft_at_base_count, 0) AS aircraft_at_base_count,
-      COALESCE(ps.aircraft_in_flight_count, 0) AS aircraft_in_flight_count,
+      (
+        SELECT COUNT(*)
+        FROM company_aircraft ca_in_flight
+        WHERE ca_in_flight.company_id = co.id
+          AND ca_in_flight.status = 'IN_FLIGHT'
+      ) AS aircraft_in_flight_count,
       COALESCE(ps.aircraft_maintenance_count, 0) AS aircraft_maintenance_count,
       COALESCE(ps.free_managed_aircraft_slots, 0) AS free_managed_aircraft_slots,
       COALESCE(ps.free_ground_aircraft_slots, 0) AS free_ground_aircraft_slots
