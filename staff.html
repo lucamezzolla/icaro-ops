@@ -48,7 +48,11 @@
           <h1>Staff</h1>
           <p>Manage pilots, technicians and future candidates.</p>
         </div>
-        <button id="addStaffButton" type="button">Add staff</button>
+        <div class="staff-page-actions" aria-label="Staff actions">
+          <button id="addStaffButton" type="button" class="icon-button" title="Add staff" aria-label="Add staff">+</button>
+          <button id="refreshButton" type="button" class="icon-button" title="Refresh staff" aria-label="Refresh staff">↻</button>
+        </div>
+
       </section>
 
       <div id="pageError" class="page-error" hidden></div>
@@ -58,9 +62,8 @@
           <div class="card-header">
             <div>
               <h2>Employees</h2>
-              <p>Essential data only. Open details for licenses and personality parameters.</p>
+              <p>Open details for licenses and personality parameters.</p>
             </div>
-            <button id="refreshButton" type="button">Refresh</button>
           </div>
 
           <div class="table-wrap">

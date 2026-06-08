@@ -201,6 +201,24 @@ dialog .dialog-footer {
   flex-wrap: wrap;
 }
 
+.staff-page-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.staff-page-actions .icon-button {
+  min-width: 42px;
+  height: 38px;
+  padding: 0 12px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
 @media (max-width: 900px) {
   .staff-candidate-filters {
     grid-template-columns: 1fr;
