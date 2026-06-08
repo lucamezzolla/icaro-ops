@@ -48,7 +48,10 @@
           <h1>Flights</h1>
           <p>Manage on-demand and scheduled flights.</p>
         </div>
-        <button id="addRouteButton" type="button">Add flight</button>
+        <div class="flight-page-actions" aria-label="Flight actions">
+          <button id="addRouteButton" type="button" class="icon-button" title="Add flight" aria-label="Add flight">+</button>
+          <button id="refreshButton" type="button" class="icon-button" title="Refresh flights" aria-label="Refresh flights">↻</button>
+        </div>
       </section>
 
       <div id="pageError" class="page-error" hidden></div>
@@ -60,7 +63,6 @@
               <h2>Flights</h2>
               <p>Create on-demand or scheduled flights and open details for operational rules and generated flight instances.</p>
             </div>
-            <button id="refreshButton" type="button">Refresh</button>
           </div>
 
           <div class="table-wrap">

@@ -484,3 +484,21 @@ dialog .dialog-footer {
   margin: 0;
   text-align: right;
 }
+
+.flight-page-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.flight-page-actions .icon-button {
+  min-width: 42px;
+  height: 38px;
+  padding: 0 12px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 1.15rem;
+  line-height: 1;
+}
