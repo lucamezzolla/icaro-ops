@@ -103,8 +103,8 @@ function renderFlights(rows) {
       <td><strong>${escapeHtml(f.flight_code)}</strong></td>
       <td>${escapeHtml(f.origin_airport_icao_code)} → ${escapeHtml(f.destination_airport_icao_code)}</td>
       <td><span class="badge ${statusClass(f.status)}">${escapeHtml(f.status)}</span></td>
-      <td>${escapeHtml(f.actual_departure_at_utc || f.scheduled_departure_at_utc || "-")}</td>
-      <td>${escapeHtml(f.actual_arrival_at_utc || f.scheduled_arrival_at_utc || "-")}</td>
+      <td>${escapeHtml(formatFlightLogDateTime(f.actual_departure_at_utc || f.scheduled_departure_at_utc))}</td>
+      <td>${escapeHtml(formatFlightLogDateTime(f.actual_arrival_at_utc || f.scheduled_arrival_at_utc))}</td>
       <td>${escapeHtml(f.registration_code || "-")}</td>
       <td class="${profitClass(f.profit_amount)}">${moneyWithCurrency(f.profit_amount, f.currency_code || "EUR")}</td>
       <td><button type="button" data-flight-id="${f.flight_id}">Details</button></td>
@@ -227,6 +227,19 @@ function statusClass(status) {
 function profitClass(value) { const n = Number(value || 0); return n > 0 ? "profit-positive" : n < 0 ? "profit-negative" : ""; }
 function showError(message) { const e = document.querySelector("#pageError"); e.hidden = false; e.textContent = message; }
 function hideError() { const e = document.querySelector("#pageError"); e.hidden = true; e.textContent = ""; }
+function formatFlightLogDateTime(value) {
+  if (!value) {
+    return "-";
+  }
+
+  const text = String(value).trim();
+  if (!text || text === "-") {
+    return "-";
+  }
+
+  return text.replace("T", " ").slice(0, 16);
+}
+
 function escapeHtml(value) {
   return String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
 }
