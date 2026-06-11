@@ -87,7 +87,7 @@ function renderSummary(summary) {
     ${summaryRow("Total", summary.total_flights ?? 0)}
     ${summaryRow("Completed", summary.completed_flights ?? 0)}
     ${summaryRow("In flight", summary.in_flight_count ?? 0)}
-    ${summaryRow("Net profit", `${money(summary.total_profit_amount ?? 0)} ${summary.currency_code || "EUR"}`)}
+    ${summaryRow("Net profit", moneyWithCurrency(summary.total_profit_amount ?? 0, summary.currency_code || "EUR"))}
   `;
 }
 
@@ -106,7 +106,7 @@ function renderFlights(rows) {
       <td>${escapeHtml(f.actual_departure_at_utc || f.scheduled_departure_at_utc || "-")}</td>
       <td>${escapeHtml(f.actual_arrival_at_utc || f.scheduled_arrival_at_utc || "-")}</td>
       <td>${escapeHtml(f.registration_code || "-")}</td>
-      <td class="${profitClass(f.profit_amount)}">${money(f.profit_amount)} ${escapeHtml(f.currency_code || "")}</td>
+      <td class="${profitClass(f.profit_amount)}">${moneyWithCurrency(f.profit_amount, f.currency_code || "EUR")}</td>
       <td><button type="button" data-flight-id="${f.flight_id}">Details</button></td>
     </tr>
   `).join("");
@@ -159,15 +159,15 @@ function renderFlightDetail(f, reputation) {
       ${section("Passengers", [
         ["Capacity", f.passenger_capacity], ["Passengers", f.passenger_count],
         ["Load factor", `${f.load_factor_percent}%`],
-        ["Ticket price", `${money(f.ticket_price)} ${f.currency_code}`]
+        ["Ticket price", moneyWithCurrency(f.ticket_price, f.currency_code)]
       ])}
       ${section("Financials", [
-        ["Revenue", `${money(f.passenger_revenue)} ${f.currency_code}`],
-        ["Fuel cost", `${money(f.fuel_cost)} ${f.currency_code}`],
-        ["Maintenance cost", `${money(f.maintenance_cost)} ${f.currency_code}`],
-        ["Staff cost", `${money(f.staff_cost)} ${f.currency_code}`],
-        ["Total cost", `${money(f.total_operating_cost)} ${f.currency_code}`],
-        ["Profit", `${money(f.profit_amount)} ${f.currency_code}`]
+        ["Revenue", moneyWithCurrency(f.passenger_revenue, f.currency_code)],
+        ["Fuel cost", moneyWithCurrency(f.fuel_cost, f.currency_code)],
+        ["Maintenance cost", moneyWithCurrency(f.maintenance_cost, f.currency_code)],
+        ["Staff cost", moneyWithCurrency(f.staff_cost, f.currency_code)],
+        ["Total cost", moneyWithCurrency(f.total_operating_cost, f.currency_code)],
+        ["Profit", moneyWithCurrency(f.profit_amount, f.currency_code)]
       ])}
       <section class="detail-section">
         <h3>Reputation</h3>
@@ -206,6 +206,16 @@ function startUtcClock() {
 }
 
 function money(value) { return Number(value || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function currencySymbol(currencyCode) {
+  const code = String(currencyCode || "EUR").toUpperCase();
+  if (code === "EUR") return "€";
+  if (code === "USD") return "$";
+  return code;
+}
+function moneyWithCurrency(value, currencyCode) {
+  const symbol = currencySymbol(currencyCode);
+  return `${symbol} ${money(value)}`;
+}
 function statusClass(status) {
   const s = String(status || "").toLowerCase().replaceAll("_", "-");
   if (s === "completed") return "completed";
