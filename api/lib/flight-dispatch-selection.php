@@ -35,7 +35,7 @@ function dispatch_fetch_flight_definition_for_update(PDO $pdo, int $companyId, i
 
 function dispatch_fetch_specific_available_aircraft(PDO $pdo, int $companyId, array $service, int $aircraftId): ?array
 {
-    $sql = dispatch_available_aircraft_sql($service, true);
+    $sql = dispatch_available_aircraft_sql($service, true) . " LIMIT 1 FOR UPDATE";
     $params = dispatch_available_aircraft_params($companyId, $service);
     $params['aircraft_id'] = $aircraftId;
     $stmt = $pdo->prepare($sql);
@@ -49,6 +49,7 @@ function dispatch_choose_best_available_aircraft(PDO $pdo, int $companyId, array
     $sql = dispatch_available_aircraft_sql($service, false) . "
         ORDER BY estimated_profit_score DESC, ca.condition_percent DESC, ca.registration_code
         LIMIT 1
+        FOR UPDATE
     ";
     $stmt = $pdo->prepare($sql);
     $stmt->execute(dispatch_available_aircraft_params($companyId, $service));

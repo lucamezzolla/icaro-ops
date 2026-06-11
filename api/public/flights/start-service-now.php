@@ -72,9 +72,10 @@ try {
 
         $pdo->rollBack();
         json_response([
-            'error' => 'NO_AVAILABLE_AIRCRAFT_AT_ORIGIN',
-            'message' => 'No compatible available aircraft is present at the flight origin airport.',
+            'error' => 'SELECTED_AIRCRAFT_NOT_AVAILABLE',
+            'message' => 'The selected aircraft is no longer available at the flight origin airport, is not compatible with this flight, or is not fit for dispatch.',
             'origin_airport_icao_code' => $service['origin_airport_icao_code'],
+            'selected_aircraft_id' => $selectedAircraftId,
             'compatible_aircraft_model_codes' => $service['compatible_aircraft_model_codes'] ?? '',
         ], 409);
     }
@@ -142,16 +143,26 @@ try {
 
     $flightInstanceId = insert_dynamic($pdo, 'scheduled_flight_instances', $values);
 
-    $pdo->prepare("
+    $aircraftUpdate = $pdo->prepare("
         UPDATE company_aircraft
         SET status = 'IN_FLIGHT',
             current_airport_icao_code = :destination
-        WHERE id = :aircraft_id AND company_id = :company_id
-    ")->execute([
+        WHERE id = :aircraft_id
+          AND company_id = :company_id
+          AND current_airport_icao_code = :origin
+          AND status IN ('AVAILABLE', 'PARKED')
+          AND condition_percent > 45.00
+    ");
+    $aircraftUpdate->execute([
         'destination' => $service['destination_airport_icao_code'],
+        'origin' => $service['origin_airport_icao_code'],
         'aircraft_id' => (int)$aircraft['aircraft_id'],
         'company_id' => $companyId,
     ]);
+
+    if ($aircraftUpdate->rowCount() !== 1) {
+        throw new RuntimeException('Selected aircraft failed the final dispatch availability check.');
+    }
 
     $pdo->commit();
 
@@ -179,7 +190,11 @@ try {
     if ($pdo->inTransaction()) {
         $pdo->rollBack();
     }
-    json_response(['error' => 'START_FLIGHT_FAILED', 'message' => $exception->getMessage()], 500);
+    $statusCode = $exception instanceof RuntimeException ? 409 : 500;
+    json_response([
+        'error' => $statusCode === 409 ? 'FINAL_DISPATCH_CHECK_FAILED' : 'START_FLIGHT_FAILED',
+        'message' => $exception->getMessage(),
+    ], $statusCode);
 }
 
 function next_flight_instance_code(PDO $pdo, int $companyId): string

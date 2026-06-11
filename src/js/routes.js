@@ -380,13 +380,7 @@ async function startFlightNow(serviceId) {
       return;
     }
 
-    let aircraftId = null;
-
-    if (available.length === 1) {
-      aircraftId = Number(available[0].company_aircraft_id || available[0].aircraft_id);
-    } else {
-      aircraftId = await chooseAircraftForOnDemandFlight(data.flight, available);
-    }
+    const aircraftId = await chooseAircraftForOnDemandFlight(data.flight, available);
 
     if (!aircraftId) {
       return;
@@ -983,12 +977,14 @@ function chooseAircraftForOnDemandFlight(flight, aircraft) {
   return new Promise(resolve => {
     const dialog = document.createElement("dialog");
     dialog.id = "chooseAircraftDialog";
+    const hasMultipleAircraft = aircraft.length > 1;
+
     dialog.innerHTML = `
       <form method="dialog" class="dialog-card">
         <header class="dialog-header">
           <div>
             <p class="eyebrow">Manual dispatch</p>
-            <h2>Choose aircraft</h2>
+            <h2>${hasMultipleAircraft ? "Choose aircraft" : "Confirm aircraft"}</h2>
           </div>
           <button type="button" class="close-button" aria-label="Close">×</button>
         </header>
@@ -1000,31 +996,26 @@ function chooseAircraftForOnDemandFlight(flight, aircraft) {
               ${detailRow("Flight", flight.flight_code || "-")}
               ${detailRow("Type", flight.service_type || "ON_DEMAND")}
               ${detailRow("Route", `${flight.origin_airport_icao_code || "-"} → ${flight.destination_airport_icao_code || "-"}`)}
-              ${detailRow("Compatible ICAO types", flight.compatible_aircraft_icao_codes || "-")}
               ${detailRow("Configured aircraft models", flight.compatible_aircraft_model_codes || "-")}
             </dl>
             <p class="muted">
-              This is a non-scheduled flight. Choose one of the compatible available aircraft configured when the flight was created.
+              Select the aircraft to use for this on-demand departure. The server will validate the choice again before starting the flight, because the aircraft may no longer be available or may fail another dispatch check.
             </p>
           </section>
 
           <section class="detail-section">
-            <h3>Available aircraft at ${escapeHtml(flight.origin_airport_icao_code || "-")}</h3>
-            <div class="aircraft-choice-list">
-              ${aircraft.map((a, index) => `
-                <label class="aircraft-choice-row">
-                  <input type="radio" name="dispatch_aircraft" value="${escapeHtml(a.company_aircraft_id || a.aircraft_id)}" ${index === 0 ? "checked" : ""}>
-                  <span>
-                    <strong>${escapeHtml(a.registration_code)} · ${escapeHtml(a.icao_type_code || a.model_code)}</strong>
-                    ${escapeHtml(a.manufacturer || "")} ${escapeHtml(a.model_name || "")}
-                    <small class="muted">
-                      Condition ${escapeHtml(a.condition_percent ?? "-")}%
-                      · Estimated score ${money(a.estimated_profit_score || 0)}
-                    </small>
-                  </span>
-                </label>
-              `).join("")}
-            </div>
+            <label class="dispatch-aircraft-select-field" for="dispatchAircraftSelect">
+              <span>Aircraft at ${escapeHtml(flight.origin_airport_icao_code || "-")}</span>
+              <select id="dispatchAircraftSelect">
+                ${aircraft.map((a, index) => `
+                  <option value="${escapeHtml(a.company_aircraft_id || a.aircraft_id)}" ${index === 0 ? "selected" : ""}>
+                    ${escapeHtml(formatDispatchAircraftOption(a))}
+                  </option>
+                `).join("")}
+              </select>
+            </label>
+
+            <div class="dispatch-selected-aircraft" id="dispatchSelectedAircraft"></div>
           </section>
         </div>
 
@@ -1037,21 +1028,53 @@ function chooseAircraftForOnDemandFlight(flight, aircraft) {
 
     document.body.appendChild(dialog);
 
+    const select = dialog.querySelector("#dispatchAircraftSelect");
+    const selectedBox = dialog.querySelector("#dispatchSelectedAircraft");
+
+    const renderSelectedAircraft = () => {
+      const selectedAircraft = aircraft.find(a => Number(a.company_aircraft_id || a.aircraft_id) === Number(select.value));
+      selectedBox.innerHTML = selectedAircraft ? renderDispatchAircraftDetails(selectedAircraft) : "";
+    };
+
     const close = value => {
       dialog.close();
       dialog.remove();
       resolve(value);
     };
 
+    select.addEventListener("change", renderSelectedAircraft);
     dialog.querySelector(".close-button").addEventListener("click", () => close(null));
     dialog.querySelector("#cancelAircraftChoice").addEventListener("click", () => close(null));
     dialog.querySelector("#confirmAircraftChoice").addEventListener("click", () => {
-      const selected = dialog.querySelector("input[name='dispatch_aircraft']:checked");
-      close(selected ? Number(selected.value) : null);
+      close(select.value ? Number(select.value) : null);
     });
 
+    renderSelectedAircraft();
     dialog.showModal();
   });
+}
+
+function formatDispatchAircraftOption(aircraft) {
+  const registration = aircraft.registration_code || "Unknown registration";
+  const type = aircraft.icao_type_code || aircraft.model_code || "Unknown type";
+  const model = [aircraft.manufacturer, aircraft.model_name].filter(Boolean).join(" ");
+  const condition = aircraft.condition_percent ?? "-";
+
+  return `${registration} · ${type}${model ? ` · ${model}` : ""} · condition ${condition}%`;
+}
+
+function renderDispatchAircraftDetails(aircraft) {
+  return `
+    <dl class="detail-list">
+      ${detailRow("Registration", aircraft.registration_code || "-")}
+      ${detailRow("Type", aircraft.icao_type_code || aircraft.model_code || "-")}
+      ${detailRow("Model", `${aircraft.manufacturer || ""} ${aircraft.model_name || ""}`.trim() || "-")}
+      ${detailRow("Current airport", aircraft.current_airport_icao_code || "-")}
+      ${detailRow("Status", aircraft.status || "-")}
+      ${detailRow("Condition", `${aircraft.condition_percent ?? "-"}%`)}
+      ${detailRow("Estimated score", money(aircraft.estimated_profit_score || 0))}
+    </dl>
+  `;
 }
 
 

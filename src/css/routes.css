@@ -619,3 +619,39 @@ dialog .dialog-footer {
   display: block;
   margin-top: 4px;
 }
+
+.dispatch-aircraft-select-field {
+  display: grid;
+  gap: 8px;
+}
+
+.dispatch-aircraft-select-field span {
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 800;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.dispatch-aircraft-select-field select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 12px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: rgba(0,0,0,.18);
+}
+
+.dispatch-aircraft-select-field select:focus {
+  outline: 2px solid rgba(115,215,255,.38);
+  border-color: rgba(115,215,255,.70);
+}
+
+.dispatch-selected-aircraft {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 14px;
+  background: rgba(255,255,255,.04);
+}
