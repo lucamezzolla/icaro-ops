@@ -47,7 +47,7 @@ function renderStaff(rows) {
     <tr>
       <td><strong>${escapeHtml(s.display_name || s.full_name || "-")}</strong></td>
       <td>${escapeHtml(s.staff_role || "-")}</td>
-      <td>${staffStatusBadge(s)}</td>
+      <td class="staff-status-cell">${staffStatusBadge(s)}</td>
       <td>${escapeHtml(s.reliability_score ?? "-")}</td>
       <td>${escapeHtml(s.fatigue_score ?? "-")}</td>
       <td>${staffCostProfile(s)}</td>
@@ -204,7 +204,7 @@ function costProfile(staff) {
 function staffStatusBadge(s) {
   const status = staffEffectiveStatus(s);
   const badgeClass = status === "AVAILABLE" ? "good" : "warn";
-  return `<span class="badge ${badgeClass}">${escapeHtml(status)}</span>`;
+  return `<span class="badge staff-status-badge ${badgeClass}">${escapeHtml(status)}</span>`;
 }
 
 function staffEffectiveStatus(s) {
