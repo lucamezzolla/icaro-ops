@@ -1,23 +1,85 @@
 const API = {
-  list: "api/public/flights/log.php",
+  list: page => `api/public/flights/log.php?page=${encodeURIComponent(page)}`,
   detail: id => `api/public/flights/detail.php?flightId=${encodeURIComponent(id)}`
+};
+
+const FLIGHT_LOG_PAGE_SIZE = 10;
+let currentFlightLogPage = 1;
+let currentFlightLogPagination = {
+  page: 1,
+  page_size: FLIGHT_LOG_PAGE_SIZE,
+  total_records: 0,
+  total_pages: 1,
+  has_previous: false,
+  has_next: false
 };
 
 document.addEventListener("DOMContentLoaded", async () => {
   startUtcClock();
-  document.querySelector("#refreshButton")?.addEventListener("click", loadFlightLog);
-  await loadFlightLog();
+  document.querySelector("#refreshButton")?.addEventListener("click", () => loadFlightLog(currentFlightLogPage));
+  await loadFlightLog(1);
 });
 
-async function loadFlightLog() {
+async function loadFlightLog(page = 1) {
   hideError();
   try {
-    const data = await getJson(API.list);
+    const data = await getJson(API.list(page));
+    currentFlightLogPagination = data.pagination || currentFlightLogPagination;
+    currentFlightLogPage = Number(currentFlightLogPagination.page || page || 1);
     renderSummary(data.summary || {});
     renderFlights(data.flights || []);
+    renderPaginationControls();
   } catch (error) {
     showError(error.message || "Unable to load flight log.");
   }
+}
+
+
+function renderPaginationControls() {
+  const top = document.querySelector("#flightLogPaginationTop");
+  const bottom = document.querySelector("#flightLogPaginationBottom");
+
+  if (!top && !bottom) {
+    return;
+  }
+
+  const html = paginationControlsHtml();
+
+  [top, bottom].forEach(container => {
+    if (!container) {
+      return;
+    }
+
+    container.innerHTML = html;
+
+    container.querySelectorAll("[data-flight-log-page]").forEach(button => {
+      button.addEventListener("click", () => {
+        const page = Number(button.dataset.flightLogPage || 1);
+        loadFlightLog(page);
+      });
+    });
+  });
+}
+
+function paginationControlsHtml() {
+  const page = Number(currentFlightLogPagination.page || 1);
+  const pageSize = Number(currentFlightLogPagination.page_size || FLIGHT_LOG_PAGE_SIZE);
+  const totalRecords = Number(currentFlightLogPagination.total_records || 0);
+  const totalPages = Math.max(1, Number(currentFlightLogPagination.total_pages || 1));
+  const firstRecord = totalRecords === 0 ? 0 : ((page - 1) * pageSize) + 1;
+  const lastRecord = Math.min(totalRecords, page * pageSize);
+
+  return `
+    <div class="pagination-info">
+      Page ${page} of ${totalPages} - Records ${firstRecord}-${lastRecord} of ${totalRecords}
+    </div>
+    <div class="pagination-buttons">
+      <button type="button" data-flight-log-page="1" ${page <= 1 ? "disabled" : ""}>First</button>
+      <button type="button" data-flight-log-page="${Math.max(1, page - 1)}" ${page <= 1 ? "disabled" : ""}>Previous</button>
+      <button type="button" data-flight-log-page="${Math.min(totalPages, page + 1)}" ${page >= totalPages ? "disabled" : ""}>Next</button>
+      <button type="button" data-flight-log-page="${totalPages}" ${page >= totalPages ? "disabled" : ""}>Last</button>
+    </div>
+  `;
 }
 
 function renderSummary(summary) {

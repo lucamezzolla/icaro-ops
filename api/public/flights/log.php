@@ -8,6 +8,29 @@ $session = require_auth_session();
 $companyId = (int)$session['company_id'];
 $pdo = db();
 
+$pageSize = 10;
+$page = filter_input(INPUT_GET, 'page', FILTER_VALIDATE_INT);
+
+if (!$page || $page < 1) {
+    $page = 1;
+}
+
+$totalStmt = $pdo->prepare("
+    SELECT COUNT(*)
+    FROM scheduled_flight_instances
+    WHERE company_id = :company_id
+");
+$totalStmt->execute(['company_id' => $companyId]);
+$totalFlights = (int)$totalStmt->fetchColumn();
+
+$totalPages = max(1, (int)ceil($totalFlights / $pageSize));
+
+if ($page > $totalPages) {
+    $page = $totalPages;
+}
+
+$offset = ($page - 1) * $pageSize;
+
 $stmt = $pdo->prepare("
     SELECT
       f.id AS flight_id, f.route_id, f.company_id, f.aircraft_id, f.flight_code, f.flight_date_utc,
@@ -23,9 +46,12 @@ $stmt = $pdo->prepare("
     LEFT JOIN aircraft_models am ON am.id = ca.aircraft_model_id
     WHERE f.company_id = :company_id
     ORDER BY COALESCE(f.actual_departure_at_utc, f.scheduled_departure_at_utc) DESC, f.id DESC
-    LIMIT 300
+    LIMIT :limit_rows OFFSET :offset_rows
 ");
-$stmt->execute(['company_id' => $companyId]);
+$stmt->bindValue(':company_id', $companyId, PDO::PARAM_INT);
+$stmt->bindValue(':limit_rows', $pageSize, PDO::PARAM_INT);
+$stmt->bindValue(':offset_rows', $offset, PDO::PARAM_INT);
+$stmt->execute();
 $flights = $stmt->fetchAll();
 
 $summaryStmt = $pdo->prepare("
@@ -48,6 +74,14 @@ json_response([
         'in_flight_count' => (int)($summary['in_flight_count'] ?? 0),
         'total_profit_amount' => $summary['total_profit_amount'] ?? '0.00',
         'currency_code' => $summary['currency_code'] ?: 'EUR',
+    ],
+    'pagination' => [
+        'page' => $page,
+        'page_size' => $pageSize,
+        'total_records' => $totalFlights,
+        'total_pages' => $totalPages,
+        'has_previous' => $page > 1,
+        'has_next' => $page < $totalPages,
     ],
     'flights' => array_map(static function (array $row): array {
         return [

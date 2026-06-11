@@ -28,3 +28,42 @@ dialog{width:min(960px,calc(100vw - 28px));border:1px solid var(--line);border-r
 .dialog-card{margin:0;background:linear-gradient(180deg,var(--panel),#081422);border-radius:22px;overflow:hidden}.dialog-header,.dialog-footer{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:18px;border-bottom:1px solid var(--line)}.dialog-footer{justify-content:flex-end;border-top:1px solid var(--line);border-bottom:0}.dialog-header h2{margin:0}.close-button{width:38px;height:38px;border-radius:50%;padding:0;font-size:1.45rem}
 #flightDetailContent{padding:18px}.detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.detail-section{border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:14px;background:rgba(255,255,255,.05)}.detail-section h3{margin:0 0 10px;font-size:1rem}.detail-list{display:grid;gap:8px;margin:0}.detail-list div{display:grid;grid-template-columns:165px 1fr;gap:10px}.detail-list dt{color:var(--muted)}.detail-list dd{margin:0;font-weight:700;overflow-wrap:anywhere}
 @media(max-width:980px){.app-layout{grid-template-columns:1fr}.sidebar{min-height:auto}.topbar{left:0}.detail-grid{grid-template-columns:1fr}}
+
+.flight-log-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 14px;
+  background: rgba(255,255,255,.04);
+}
+
+.flight-log-pagination .pagination-info {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.flight-log-pagination .pagination-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.flight-log-pagination button[disabled] {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+@media(max-width:720px) {
+  .flight-log-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .flight-log-pagination .pagination-buttons {
+    justify-content: flex-start;
+  }
+}
