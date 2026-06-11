@@ -376,7 +376,7 @@ async function startFlightNow(serviceId) {
     const available = data.available_aircraft || [];
 
     if (!available.length) {
-      alert("This flight cannot depart: no compatible available aircraft is present at the origin airport.");
+      showError("This flight cannot depart: no compatible available aircraft is present at the origin airport.");
       return;
     }
 
@@ -397,13 +397,7 @@ async function startFlightNow(serviceId) {
       company_aircraft_id: aircraftId
     });
 
-    alert(
-      `Flight ${result.flight_code} is now in flight.\n` +
-      `Aircraft: ${result.aircraft?.registration_code || "-"}\n` +
-      `Crew: ${result.crew?.pilot_1 || "-"} / ${result.crew?.pilot_2 || "-"}\n` +
-      `Estimated profit: ${result.estimated_profit || "0.00"}`
-    );
-
+    await showStartedFlightDialog(result);
     await loadFlights();
   } catch (error) {
     showError(error.message || "Unable to start flight.");
@@ -936,6 +930,55 @@ function escapeHtml(value) {
 }
 
 
+function showStartedFlightDialog(result) {
+  return new Promise(resolve => {
+    const dialog = document.createElement("dialog");
+    dialog.id = "startedFlightDialog";
+    dialog.innerHTML = `
+      <form method="dialog" class="dialog-card">
+        <header class="dialog-header">
+          <div>
+            <p class="eyebrow">Flight started</p>
+            <h2>${escapeHtml(result.flight_code || "Flight")}</h2>
+          </div>
+          <button type="button" class="close-button" aria-label="Close">×</button>
+        </header>
+
+        <div class="dialog-body">
+          <section class="dispatch-summary-card">
+            <h3>Dispatch summary</h3>
+            <dl class="detail-list">
+              ${detailRow("Status", result.status || "IN_FLIGHT")}
+              ${detailRow("Flight code", result.flight_code || "-")}
+              ${detailRow("Aircraft", `${result.aircraft?.registration_code || "-"} · ${result.aircraft?.icao_type_code || result.aircraft?.model_code || "-"}`)}
+              ${detailRow("Crew", `${result.crew?.pilot_1 || "-"} / ${result.crew?.pilot_2 || "-"}`)}
+              ${detailRow("Technician", result.crew?.technician || "-")}
+              ${detailRow("Estimated profit", `${money(result.estimated_profit || 0)} ${result.currency_code || "EUR"}`)}
+              ${detailRow("Scheduled arrival UTC", result.scheduled_arrival_at_utc || "-")}
+            </dl>
+          </section>
+        </div>
+
+        <footer class="dialog-footer">
+          <button type="button" id="closeStartedFlightDialog" class="primary">Close</button>
+        </footer>
+      </form>
+    `;
+
+    document.body.appendChild(dialog);
+
+    const close = () => {
+      dialog.close();
+      dialog.remove();
+      resolve();
+    };
+
+    dialog.querySelector(".close-button").addEventListener("click", close);
+    dialog.querySelector("#closeStartedFlightDialog").addEventListener("click", close);
+    dialog.showModal();
+  });
+}
+
 function chooseAircraftForOnDemandFlight(flight, aircraft) {
   return new Promise(resolve => {
     const dialog = document.createElement("dialog");
@@ -949,45 +992,64 @@ function chooseAircraftForOnDemandFlight(flight, aircraft) {
           </div>
           <button type="button" class="close-button" aria-label="Close">×</button>
         </header>
+
         <div class="dialog-body">
-          <p class="muted">
-            Non-scheduled flights require manual aircraft selection.
-            Only compatible available aircraft at ${escapeHtml(flight.origin_airport_icao_code)} are listed.
-          </p>
-          <div class="aircraft-choice-list">
-            ${aircraft.map((a, index) => `
-              <label class="aircraft-choice-row">
-                <input type="radio" name="dispatch_aircraft" value="${escapeHtml(a.company_aircraft_id || a.aircraft_id)}" ${index === 0 ? "checked" : ""}>
-                <span>
-                  <strong>${escapeHtml(a.registration_code)} · ${escapeHtml(a.icao_type_code || a.model_code)}</strong>
-                  ${escapeHtml(a.manufacturer || "")} ${escapeHtml(a.model_name || "")}
-                  <small class="muted">
-                    Condition ${escapeHtml(a.condition_percent ?? "-")}%
-                    · Estimated score ${money(a.estimated_profit_score || 0)}
-                  </small>
-                </span>
-              </label>
-            `).join("")}
-          </div>
+          <section class="dispatch-summary-card">
+            <h3>Non-scheduled flight</h3>
+            <dl class="detail-list">
+              ${detailRow("Flight", flight.flight_code || "-")}
+              ${detailRow("Type", flight.service_type || "ON_DEMAND")}
+              ${detailRow("Route", `${flight.origin_airport_icao_code || "-"} → ${flight.destination_airport_icao_code || "-"}`)}
+              ${detailRow("Compatible ICAO types", flight.compatible_aircraft_icao_codes || "-")}
+              ${detailRow("Configured aircraft models", flight.compatible_aircraft_model_codes || "-")}
+            </dl>
+            <p class="muted">
+              This is a non-scheduled flight. Choose one of the compatible available aircraft configured when the flight was created.
+            </p>
+          </section>
+
+          <section class="detail-section">
+            <h3>Available aircraft at ${escapeHtml(flight.origin_airport_icao_code || "-")}</h3>
+            <div class="aircraft-choice-list">
+              ${aircraft.map((a, index) => `
+                <label class="aircraft-choice-row">
+                  <input type="radio" name="dispatch_aircraft" value="${escapeHtml(a.company_aircraft_id || a.aircraft_id)}" ${index === 0 ? "checked" : ""}>
+                  <span>
+                    <strong>${escapeHtml(a.registration_code)} · ${escapeHtml(a.icao_type_code || a.model_code)}</strong>
+                    ${escapeHtml(a.manufacturer || "")} ${escapeHtml(a.model_name || "")}
+                    <small class="muted">
+                      Condition ${escapeHtml(a.condition_percent ?? "-")}%
+                      · Estimated score ${money(a.estimated_profit_score || 0)}
+                    </small>
+                  </span>
+                </label>
+              `).join("")}
+            </div>
+          </section>
         </div>
+
         <footer class="dialog-footer">
           <button type="button" id="cancelAircraftChoice">Cancel</button>
           <button type="button" id="confirmAircraftChoice" class="primary">Start flight</button>
         </footer>
       </form>
     `;
+
     document.body.appendChild(dialog);
+
     const close = value => {
       dialog.close();
       dialog.remove();
       resolve(value);
     };
+
     dialog.querySelector(".close-button").addEventListener("click", () => close(null));
     dialog.querySelector("#cancelAircraftChoice").addEventListener("click", () => close(null));
     dialog.querySelector("#confirmAircraftChoice").addEventListener("click", () => {
       const selected = dialog.querySelector("input[name='dispatch_aircraft']:checked");
       close(selected ? Number(selected.value) : null);
     });
+
     dialog.showModal();
   });
 }
