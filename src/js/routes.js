@@ -12,6 +12,7 @@ const API = {
 };
 
 let flights = [];
+let flightFiltersApplied = false;
 let lastSuggestedTicketPrice = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -26,6 +27,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   setupFlightTypeExplanation();
   setupTicketSuggestion();
   setupDialogCloseButtons();
+  setupFlightFilters();
 
   await loadFlights();
 });
@@ -37,7 +39,7 @@ async function loadFlights() {
     await processDueScheduledFlights();
     flights = await getJson(API.routes);
     renderSummary(flights);
-    renderFlights(flights);
+    renderFlights(getVisibleFlightsForCurrentFilters());
   } catch (error) {
     showError(error.message || "Unable to load flights.");
   }
@@ -64,11 +66,167 @@ function renderSummary(rows) {
   `;
 }
 
+function setupFlightFilters() {
+  if (document.querySelector("#flightTableFilters")) {
+    return;
+  }
+
+  const table = document.querySelector("#routesTableBody")?.closest("table");
+  if (!table) {
+    return;
+  }
+
+  const filters = document.createElement("section");
+  filters.id = "flightTableFilters";
+  filters.className = "filter-panel";
+  filters.innerHTML = `
+    <div class="filter-grid">
+      <label>
+        <span>Departure</span>
+        <input type="text" id="flightDepartureFilter" placeholder="ICAO, city, airport">
+      </label>
+      <label>
+        <span>Arrival</span>
+        <input type="text" id="flightArrivalFilter" placeholder="ICAO, city, airport">
+      </label>
+      <label>
+        <span>Airplane</span>
+        <input type="text" id="flightAirplaneFilter" placeholder="ICAO type, model, manufacturer">
+      </label>
+      <label>
+        <span>Scheduled</span>
+        <select id="flightScheduledFilter">
+          <option value="">Any</option>
+          <option value="SCHEDULED">Scheduled</option>
+          <option value="ON_DEMAND">On demand</option>
+        </select>
+      </label>
+    </div>
+    <label class="filter-action-cell">
+      <span>&nbsp;</span>
+      <button type="button" id="clearFlightFiltersButton" class="secondary" title="Clear flight filters">🧹 Clear</button>
+    </label>
+  `;
+
+  table.parentNode.insertBefore(filters, table);
+
+  ["#flightDepartureFilter", "#flightArrivalFilter", "#flightAirplaneFilter"].forEach(selector => {
+    filters.querySelector(selector)?.addEventListener("input", applyFlightFiltersLive);
+  });
+
+  filters.querySelector("#flightScheduledFilter")?.addEventListener("change", applyFlightFiltersLive);
+
+  filters.querySelector("#clearFlightFiltersButton")?.addEventListener("click", () => {
+    flightFiltersApplied = false;
+    filters.querySelector("#flightDepartureFilter").value = "";
+    filters.querySelector("#flightArrivalFilter").value = "";
+    filters.querySelector("#flightAirplaneFilter").value = "";
+    filters.querySelector("#flightScheduledFilter").value = "";
+    renderFlights([]);
+  });
+}
+
+function applyFlightFiltersLive() {
+  flightFiltersApplied = hasActiveFlightFilters();
+  renderFlights(getVisibleFlightsForCurrentFilters());
+}
+
+function hasActiveFlightFilters() {
+  return Boolean(
+    normalizedFilterValue("#flightDepartureFilter") ||
+    normalizedFilterValue("#flightArrivalFilter") ||
+    normalizedFilterValue("#flightAirplaneFilter") ||
+    String(document.querySelector("#flightScheduledFilter")?.value || "").trim()
+  );
+}
+
+function getVisibleFlightsForCurrentFilters() {
+  if (!flightFiltersApplied || !hasActiveFlightFilters()) {
+    return [];
+  }
+
+  const departure = normalizedFilterValue("#flightDepartureFilter");
+  const arrival = normalizedFilterValue("#flightArrivalFilter");
+  const airplane = normalizedFilterValue("#flightAirplaneFilter");
+  const scheduled = String(document.querySelector("#flightScheduledFilter")?.value || "").toUpperCase();
+
+  return flights.filter(flight => {
+    if (departure && !flightDepartureSearchText(flight).includes(departure)) {
+      return false;
+    }
+
+    if (arrival && !flightArrivalSearchText(flight).includes(arrival)) {
+      return false;
+    }
+
+    if (airplane && !flightMatchesAirplaneFilter(flight, airplane)) {
+      return false;
+    }
+
+    if (scheduled && String(flight.service_type || "").toUpperCase() !== scheduled) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function normalizedFilterValue(selector) {
+  return String(document.querySelector(selector)?.value || "").trim().toUpperCase();
+}
+
+function flightDepartureSearchText(flight) {
+  return [
+    flight.origin_airport_icao_code,
+    flight.origin_airport_iata_code,
+    flight.origin_airport_name,
+    flight.origin_city,
+    flight.origin_location_name
+  ].map(value => String(value || "").toUpperCase()).join(" ");
+}
+
+function flightArrivalSearchText(flight) {
+  return [
+    flight.destination_airport_icao_code,
+    flight.destination_airport_iata_code,
+    flight.destination_airport_name,
+    flight.destination_city,
+    flight.destination_location_name
+  ].map(value => String(value || "").toUpperCase()).join(" ");
+}
+
+function flightMatchesAirplaneFilter(flight, filterValue) {
+  const icaoCodes = flightAirplaneIcaoCodes(flight);
+
+  /*
+   * Airplane filter is intentionally ICAO-only.
+   *
+   * Examples:
+   * - A or A3 or A320 => matches A320
+   * - C or CONC => matches CONC
+   * - manufacturer/model names are ignored
+   */
+  return icaoCodes.some(code => code.startsWith(filterValue));
+}
+
+function flightAirplaneSearchText(flight) {
+  return flightAirplaneIcaoCodes(flight).join(" ");
+}
+
+function flightAirplaneIcaoCodes(flight) {
+  return [
+    flight.compatible_aircraft_icao_codes,
+    flight.icao_type_code
+  ]
+    .flatMap(splitSearchTokens)
+    .filter(Boolean);
+}
+
 function renderFlights(rows) {
   const tbody = document.querySelector("#routesTableBody");
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="5">No flights yet.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5">${flightFiltersApplied ? "No flights match the current filters." : "Use the filters above to show flights."}</td></tr>`;
     return;
   }
 
@@ -815,3 +973,11 @@ function chooseAircraftForOnDemandFlight(flight, aircraft) {
   });
 }
 
+
+function splitSearchTokens(value) {
+  return String(value || "")
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .map(token => token.trim())
+    .filter(Boolean);
+}
