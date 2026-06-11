@@ -502,3 +502,82 @@ dialog .dialog-footer {
   font-size: 1.15rem;
   line-height: 1;
 }
+
+/* Unified filter panel, aligned with the Buy new aircraft market filters. */
+.aircraft-market-filter-panel,
+.flight-filter-panel {
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 18px;
+  background: rgba(255,255,255,.05);
+}
+
+.aircraft-market-filters,
+.flight-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.aircraft-market-filters label,
+.flight-filters label {
+  display: grid;
+  gap: 6px;
+}
+
+.aircraft-market-filters label span,
+.flight-filters label span {
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+}
+
+.aircraft-market-filters input,
+.aircraft-market-filters select,
+.flight-filters input,
+.flight-filters select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 12px;
+  padding: 8px 10px;
+  color: var(--text);
+  background: rgba(0,0,0,.18);
+}
+
+.aircraft-market-filters input:focus,
+.aircraft-market-filters select:focus,
+.flight-filters input:focus,
+.flight-filters select:focus {
+  outline: 2px solid rgba(115,215,255,.38);
+  border-color: rgba(115,215,255,.70);
+}
+
+.aircraft-market-filters button,
+.flight-filters button {
+  min-height: 38px;
+  align-self: end;
+  white-space: nowrap;
+}
+
+.aircraft-market-filter-summary {
+  margin: 10px 0 0;
+}
+
+@media(max-width:1100px) {
+  .aircraft-market-filters,
+  .flight-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media(max-width:640px) {
+  .aircraft-market-filters,
+  .flight-filters {
+    grid-template-columns: 1fr;
+  }
+}

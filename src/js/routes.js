@@ -78,21 +78,25 @@ function setupFlightFilters() {
 
   const filters = document.createElement("section");
   filters.id = "flightTableFilters";
-  filters.className = "filter-panel";
+  filters.className = "aircraft-market-filter-panel flight-filter-panel";
+  filters.setAttribute("aria-label", "Flight filters");
   filters.innerHTML = `
-    <div class="filter-grid">
+    <div class="aircraft-market-filters flight-filters">
       <label>
         <span>Departure</span>
         <input type="text" id="flightDepartureFilter" placeholder="ICAO, city, airport">
       </label>
+
       <label>
         <span>Arrival</span>
         <input type="text" id="flightArrivalFilter" placeholder="ICAO, city, airport">
       </label>
+
       <label>
         <span>Airplane</span>
-        <input type="text" id="flightAirplaneFilter" placeholder="ICAO type, model, manufacturer">
+        <input type="text" id="flightAirplaneFilter" placeholder="ICAO type code">
       </label>
+
       <label>
         <span>Scheduled</span>
         <select id="flightScheduledFilter">
@@ -101,11 +105,13 @@ function setupFlightFilters() {
           <option value="ON_DEMAND">On demand</option>
         </select>
       </label>
-    </div>
-    <label class="filter-action-cell">
-      <span>&nbsp;</span>
+
       <button type="button" id="clearFlightFiltersButton" class="secondary" title="Clear flight filters">🧹 Clear</button>
-    </label>
+    </div>
+
+    <p class="muted aircraft-market-filter-summary" id="flightFilterSummary">
+      Showing 0 of 0 flights.
+    </p>
   `;
 
   table.parentNode.insertBefore(filters, table);
@@ -124,6 +130,18 @@ function setupFlightFilters() {
     filters.querySelector("#flightScheduledFilter").value = "";
     renderFlights([]);
   });
+
+  updateFlightFilterSummary(0);
+}
+
+
+function updateFlightFilterSummary(visibleCount = 0) {
+  const summary = document.querySelector("#flightFilterSummary");
+  if (!summary) {
+    return;
+  }
+
+  summary.textContent = `Showing ${visibleCount} of ${flights.length} flights.`;
 }
 
 function applyFlightFiltersLive() {
@@ -223,6 +241,7 @@ function flightAirplaneIcaoCodes(flight) {
 }
 
 function renderFlights(rows) {
+  updateFlightFilterSummary(rows.length);
   const tbody = document.querySelector("#routesTableBody");
 
   if (!rows.length) {

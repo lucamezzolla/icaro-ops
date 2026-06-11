@@ -502,7 +502,7 @@ function renderAircraftMarketFilters(rows, visibleCount) {
           >
         </label>
 
-        <button type="button" class="secondary" id="aircraftMarketClearFilters">Clear filters</button>
+        <button type="button" class="secondary" id="aircraftMarketClearFilters" title="Clear aircraft market filters">🧹 Clear</button>
       </div>
 
       <p class="muted aircraft-market-filter-summary">
