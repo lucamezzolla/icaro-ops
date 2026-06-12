@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
 require __DIR__ . '/../../lib/flight-completion.php';
+require_once __DIR__ . '/../../lib/maintenance-engine.php';
 require_once __DIR__ . '/../../lib/scheduled-service-dispatcher.php';
 
 $session = require_auth_session();
@@ -29,6 +30,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 }
 
 complete_due_flights($pdo, $companyId);
+complete_due_maintenance($pdo, (int)$companyId);
 
 $stmt = $pdo->prepare("
     SELECT *

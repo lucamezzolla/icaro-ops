@@ -3,11 +3,16 @@ declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
+require_once __DIR__ . '/../../lib/flight-completion.php';
+require_once __DIR__ . '/../../lib/maintenance-engine.php';
 
 $session = require_auth_session();
 $companyId = (int)$session['company_id'];
 
 $pdo = db();
+
+complete_due_flights($pdo, $companyId);
+complete_due_maintenance($pdo, $companyId);
 
 $stmt = $pdo->prepare("
     SELECT

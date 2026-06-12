@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/flight-completion.php';
+require_once __DIR__ . '/maintenance-engine.php';
 require_once __DIR__ . '/flight-dispatch-selection.php';
 require_once __DIR__ . '/missed-scheduled-flight-penalty.php';
 
@@ -24,6 +25,7 @@ function process_due_scheduled_services(
     $windowMinutes = max(1, min(1440, $windowMinutes));
 
     complete_due_flights($pdo, $companyId);
+    complete_due_maintenance($pdo, $companyId);
 
     $services = icaro_fetch_due_scheduled_services($pdo, $companyId, $windowMinutes, $devForce);
     $results = [];
@@ -113,6 +115,7 @@ function process_due_scheduled_services(
     }
 
     complete_due_flights($pdo, $companyId);
+    complete_due_maintenance($pdo, $companyId);
 
     return [
         'status' => 'OK',
@@ -289,6 +292,15 @@ function icaro_start_scheduled_service_flight(
             current_airport_icao_code = :destination
         WHERE id = :aircraft_id
           AND company_id = :company_id
+          AND status IN ('AVAILABLE', 'PARKED')
+          AND condition_percent > 45.00
+          AND NOT EXISTS (
+            SELECT 1
+            FROM aircraft_operational_events me
+            WHERE me.company_id = company_aircraft.company_id
+              AND me.aircraft_id = company_aircraft.id
+              AND me.status = 'IN_PROGRESS'
+          )
     ")->execute([
         'destination' => $service['destination_airport_icao_code'],
         'aircraft_id' => (int)$aircraft['aircraft_id'],

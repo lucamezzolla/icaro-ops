@@ -3,10 +3,13 @@ declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
+require_once __DIR__ . '/../../lib/maintenance-engine.php';
 
 $session = require_auth_session();
 $companyId = $session['company_id'];
 $aircraftId = filter_input(INPUT_GET, 'aircraftId', FILTER_VALIDATE_INT);
+
+complete_due_maintenance(db(), (int)$companyId);
 
 if (!$aircraftId) {
     json_response(['error' => 'INVALID_AIRCRAFT_ID'], 422);

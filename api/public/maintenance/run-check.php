@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
+require_once __DIR__ . '/../../lib/maintenance-engine.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['error' => 'METHOD_NOT_ALLOWED'], 405);
@@ -15,6 +16,8 @@ $pdo = db();
 
 try {
     $pdo->beginTransaction();
+
+    $completedMaintenance = complete_due_maintenance($pdo, (int)$companyId);
 
     $stmt = $pdo->prepare("
         SELECT *
@@ -152,6 +155,8 @@ try {
     $pdo->commit();
 
     json_response([
+        'completed_count' => count($completedMaintenance),
+        'completed' => $completedMaintenance,
         'created_count' => count($created),
         'created' => $created,
     ]);

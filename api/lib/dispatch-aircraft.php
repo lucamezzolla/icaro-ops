@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__ . '/maintenance-engine.php';
+
 /**
  * Dispatch aircraft compatibility helper.
  *
@@ -62,8 +64,6 @@ function find_compatible_aircraft_for_flight(
           ON am.id = ca.aircraft_model_id
         WHERE ca.company_id = :company_id
           AND ca.current_airport_icao_code = :origin
-          AND ca.status IN ('AVAILABLE', 'PARKED')
-          AND ca.condition_percent > 45.00
           AND am.range_km >= :min_range_km
           AND am.passenger_capacity_standard >= :min_passenger_capacity
     ";
@@ -78,6 +78,8 @@ function find_compatible_aircraft_for_flight(
         'min_range_km' => $minRangeKm,
         'min_passenger_capacity' => $minPassengerCapacity,
     ];
+
+    $sql .= maintenance_dispatch_guard_sql('ca', 'am');
 
     if ($requiredModelId) {
         $sql .= " AND am.id = :required_model_filter";

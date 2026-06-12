@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/aircraft-type-rating.php';
+require_once __DIR__ . '/maintenance-engine.php';
 
 function dispatch_fetch_flight_definition_for_update(PDO $pdo, int $companyId, int $serviceId): ?array
 {
@@ -92,9 +93,9 @@ function dispatch_available_aircraft_sql(array $service, bool $specific): string
         JOIN aircraft_models am ON am.id = ca.aircraft_model_id
         WHERE ca.company_id = :company_id
           AND ca.current_airport_icao_code = :origin
-          AND ca.status IN ('AVAILABLE', 'PARKED')
-          AND ca.condition_percent > 45.00
     ";
+    $sql .= maintenance_dispatch_guard_sql('ca', 'am');
+
     if ($specific) {
         $sql .= " AND ca.id = :aircraft_id";
     }

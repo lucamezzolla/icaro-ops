@@ -4,6 +4,7 @@ declare(strict_types=1);
 require __DIR__ . '/../../lib/bootstrap.php';
 require __DIR__ . '/../../lib/session.php';
 require __DIR__ . '/../../lib/flight-completion.php';
+require_once __DIR__ . '/../../lib/maintenance-engine.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     json_response(['error' => 'METHOD_NOT_ALLOWED'], 405);
@@ -26,6 +27,7 @@ try {
     $pdo->beginTransaction();
 
     complete_due_flights($pdo, $companyId);
+    complete_due_maintenance($pdo, $companyId);
 
     $routeStmt = $pdo->prepare("
         SELECT *
@@ -196,11 +198,24 @@ try {
         SET status = 'IN_FLIGHT'
         WHERE id = :aircraft_id
           AND company_id = :company_id
+          AND status IN ('AVAILABLE', 'PARKED')
+          AND condition_percent > 45.00
+          AND NOT EXISTS (
+            SELECT 1
+            FROM aircraft_operational_events me
+            WHERE me.company_id = company_aircraft.company_id
+              AND me.aircraft_id = company_aircraft.id
+              AND me.status = 'IN_PROGRESS'
+          )
     ");
     $updateAircraft->execute([
         'aircraft_id' => (int)$aircraft['id'],
         'company_id' => $companyId,
     ]);
+
+    if ($updateAircraft->rowCount() !== 1) {
+        throw new RuntimeException('Selected aircraft failed the final maintenance dispatch guard.');
+    }
 
     if (empty($route['aircraft_id'])) {
         $pdo->prepare("
@@ -258,10 +273,11 @@ function find_dispatch_aircraft(PDO $pdo, int $companyId, array $route): ?array
         JOIN aircraft_models am
           ON am.id = ca.aircraft_model_id
         WHERE ca.company_id = :company_id
-          AND ca.status IN ('AVAILABLE', 'PARKED')
           AND ca.current_airport_icao_code = :origin
           AND am.model_code = 'C208B_GRAND_CARAVAN_EX'
     ";
+
+    $baseSql .= maintenance_dispatch_guard_sql('ca', 'am');
 
     if (!empty($route['aircraft_id'])) {
         $stmt = $pdo->prepare($baseSql . " AND ca.id = :aircraft_id LIMIT 1 FOR UPDATE");

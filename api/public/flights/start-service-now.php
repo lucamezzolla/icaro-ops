@@ -28,6 +28,8 @@ $pdo = db();
 try {
     $pdo->beginTransaction();
 
+    complete_due_maintenance($pdo, $companyId);
+
     $service = dispatch_fetch_flight_definition_for_update($pdo, $companyId, $serviceId);
     if (!$service) {
         $pdo->rollBack();
@@ -152,6 +154,13 @@ try {
           AND current_airport_icao_code = :origin
           AND status IN ('AVAILABLE', 'PARKED')
           AND condition_percent > 45.00
+          AND NOT EXISTS (
+            SELECT 1
+            FROM aircraft_operational_events me
+            WHERE me.company_id = company_aircraft.company_id
+              AND me.aircraft_id = company_aircraft.id
+              AND me.status = 'IN_PROGRESS'
+          )
     ");
     $aircraftUpdate->execute([
         'destination' => $service['destination_airport_icao_code'],
