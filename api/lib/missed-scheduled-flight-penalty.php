@@ -13,12 +13,67 @@ require_once __DIR__ . '/mailbox.php';
 const ICARO_MISSED_SCHEDULED_FLIGHT_PENALTY_AMOUNT = 100000.00;
 const ICARO_MISSED_SCHEDULED_FLIGHT_REPUTATION_LOSS = 10;
 
+function missed_scheduled_flight_date_utc(array $service): string
+{
+    $scheduledDeparture = trim((string)($service['scheduled_departure_at_utc'] ?? ''));
+
+    if ($scheduledDeparture !== '') {
+        $timestamp = strtotime($scheduledDeparture . ' UTC');
+
+        if ($timestamp !== false) {
+            return gmdate('Y-m-d', $timestamp);
+        }
+    }
+
+    return gmdate('Y-m-d');
+}
+
+function missed_scheduled_flight_penalty_already_applied(
+    PDO $pdo,
+    int $companyId,
+    int $serviceId,
+    string $flightDateUtc
+): bool {
+    $start = $flightDateUtc . ' 00:00:00';
+    $end = gmdate('Y-m-d H:i:s', strtotime($start . ' UTC') + 86400);
+    $dateMarker = '%Scheduled date: ' . $flightDateUtc . '%';
+
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM company_financial_events
+        WHERE company_id = :company_id
+          AND event_type = 'MISSED_SCHEDULED_FLIGHT_PENALTY'
+          AND related_entity_type = 'SCHEDULED_SERVICE'
+          AND related_entity_id = :service_id
+          AND (
+            (created_at_utc >= :start_utc AND created_at_utc < :end_utc)
+            OR description LIKE :date_marker
+          )
+    ");
+    $stmt->execute([
+        'company_id' => $companyId,
+        'service_id' => $serviceId,
+        'start_utc' => $start,
+        'end_utc' => $end,
+        'date_marker' => $dateMarker,
+    ]);
+
+    return (int)$stmt->fetchColumn() > 0;
+}
+
 function apply_missed_scheduled_flight_penalty(
     PDO $pdo,
     int $companyId,
     array $service,
     string $reason
 ): void {
+    $serviceId = (int)($service['service_id'] ?? 0);
+    $flightDateUtc = missed_scheduled_flight_date_utc($service);
+
+    if ($serviceId > 0 && missed_scheduled_flight_penalty_already_applied($pdo, $companyId, $serviceId, $flightDateUtc)) {
+        return;
+    }
+
     $companyStmt = $pdo->prepare("
         SELECT
           company_name,
@@ -77,8 +132,8 @@ function apply_missed_scheduled_flight_penalty(
         'company_id' => $companyId,
         'amount' => number_format(-$penalty, 2, '.', ''),
         'currency_code' => $currency,
-        'description' => $reason,
-        'related_entity_id' => (int)$service['service_id'],
+        'description' => sprintf('Scheduled date: %s. %s', $flightDateUtc, $reason),
+        'related_entity_id' => $serviceId,
     ]);
 
     $flightCode = $service['flight_route_code'] ?: $service['service_code'];
@@ -102,6 +157,6 @@ function apply_missed_scheduled_flight_penalty(
             $reason
         ),
         'SCHEDULED_SERVICE',
-        (int)$service['service_id']
+        $serviceId
     );
 }
