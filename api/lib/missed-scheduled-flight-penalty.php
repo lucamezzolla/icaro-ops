@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/mailbox.php';
+require_once __DIR__ . '/reputation.php';
 
 /*
  * Temporary balancing values.
@@ -12,6 +13,7 @@ require_once __DIR__ . '/mailbox.php';
  */
 const ICARO_MISSED_SCHEDULED_FLIGHT_PENALTY_AMOUNT = 100000.00;
 const ICARO_MISSED_SCHEDULED_FLIGHT_REPUTATION_LOSS = 10;
+const ICARO_MISSED_SCHEDULED_FLIGHT_REPUTATION_EVENT_CODE = 'MISSED_SCHEDULED_FLIGHT_PENALTY';
 
 function missed_scheduled_flight_date_utc(array $service): string
 {
@@ -98,14 +100,11 @@ function apply_missed_scheduled_flight_penalty(
 
     $update = $pdo->prepare("
         UPDATE companies
-        SET
-          budget_amount = budget_amount - :penalty,
-          reputation_score = GREATEST(0, reputation_score - :reputation_loss)
+        SET budget_amount = budget_amount - :penalty
         WHERE id = :company_id
     ");
     $update->execute([
         'penalty' => number_format($penalty, 2, '.', ''),
-        'reputation_loss' => $reputationLoss,
         'company_id' => $companyId,
     ]);
 
@@ -135,6 +134,16 @@ function apply_missed_scheduled_flight_penalty(
         'description' => sprintf('Scheduled date: %s. %s', $flightDateUtc, $reason),
         'related_entity_id' => $serviceId,
     ]);
+
+    $reputationResult = apply_reputation_event(
+        $pdo,
+        $companyId,
+        ICARO_MISSED_SCHEDULED_FLIGHT_REPUTATION_EVENT_CODE,
+        'SCHEDULED_SERVICE',
+        $serviceId,
+        sprintf('Scheduled date: %s. %s', $flightDateUtc, $reason)
+    );
+    $reputationLoss = abs((int)($reputationResult['reputation_delta'] ?? -ICARO_MISSED_SCHEDULED_FLIGHT_REPUTATION_LOSS));
 
     $flightCode = $service['flight_route_code'] ?: $service['service_code'];
     $origin = (string)$service['origin_airport_icao_code'];
