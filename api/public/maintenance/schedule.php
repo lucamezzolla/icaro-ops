@@ -44,8 +44,35 @@ try {
         json_response(['error' => 'MAINTENANCE_ALREADY_IN_PROGRESS'], 409);
     }
 
+    $company = fetch_company_for_update($pdo, $companyId);
+
+    if (!$company) {
+        $pdo->rollBack();
+        json_response(['error' => 'COMPANY_NOT_FOUND'], 404);
+    }
+
     $license = $aircraft['technician_license_required'] ?? null;
     $durationHours = max(1, (int)$aircraft['routine_maintenance_duration_hours']);
+    $maintenanceCost = max(0.0, (float)($aircraft['routine_maintenance_cost_amount'] ?? 0.0));
+    $currencyCode = (string)($company['currency_code'] ?? $aircraft['currency_code'] ?? 'EUR');
+
+    if ($maintenanceCost > (float)$company['budget_amount']) {
+        $pdo->rollBack();
+        json_response([
+            'error' => 'INSUFFICIENT_BUDGET',
+            'message' => sprintf(
+                'Maintenance cannot start: required budget is %.2f %s, available budget is %.2f %s.',
+                $maintenanceCost,
+                $currencyCode,
+                (float)$company['budget_amount'],
+                $currencyCode
+            ),
+            'required_amount' => number_format($maintenanceCost, 2, '.', ''),
+            'available_budget' => number_format((float)$company['budget_amount'], 2, '.', ''),
+            'currency_code' => $currencyCode,
+        ], 409);
+    }
+
 
     $technician = find_available_technician($pdo, $companyId, $license, $durationHours);
 
@@ -69,14 +96,16 @@ try {
         ], 409);
     }
 
-    $title = $aircraft['registration_code'] . ' scheduled maintenance';
+    $title = $aircraft['registration_code'] . ' maintenance started';
     $description = sprintf(
-        'Routine maintenance started for %s %s (%s). Technician: %s. Expected duration: %d hours.',
+        'Routine maintenance started for %s %s (%s). Technician: %s. Expected duration: %d hours. Cost: %.2f %s.',
         $aircraft['manufacturer'],
         $aircraft['model_name'],
         $aircraft['registration_code'],
         $technician['display_name'],
-        $durationHours
+        $durationHours,
+        $maintenanceCost,
+        $currencyCode
     );
 
     if ($impact['has_risk']) {
@@ -122,7 +151,11 @@ try {
             'delay_risk_minutes',
             :delay_risk_minutes,
             'estimated_penalty_amount',
-            :estimated_penalty_amount
+            :estimated_penalty_amount,
+            'maintenance_cost_amount',
+            :maintenance_cost_amount,
+            'currency_code',
+            :currency_code
           )
         )
     ");
@@ -136,6 +169,8 @@ try {
         'has_risk' => $impact['has_risk'] ? 1 : 0,
         'delay_risk_minutes' => $impact['delay_risk_minutes'],
         'estimated_penalty_amount' => number_format($impact['estimated_penalty_amount'], 2, '.', ''),
+        'maintenance_cost_amount' => number_format($maintenanceCost, 2, '.', ''),
+        'currency_code' => $currencyCode,
     ]);
     $messageId = (int)$pdo->lastInsertId();
 
@@ -154,6 +189,8 @@ try {
           assigned_technician_id,
           delay_risk_minutes,
           estimated_penalty_amount,
+          cost_amount,
+          cost_currency_code,
           responsibility_type,
           estimated_completed_at_utc,
           mailbox_message_id
@@ -171,6 +208,8 @@ try {
           :technician_id,
           :delay_risk_minutes,
           :estimated_penalty_amount,
+          :cost_amount,
+          :cost_currency_code,
           'COMPANY_FAULT',
           DATE_ADD(UTC_TIMESTAMP(), INTERVAL :duration HOUR),
           :message_id
@@ -187,11 +226,51 @@ try {
         'technician_id' => (int)$technician['id'],
         'delay_risk_minutes' => $impact['delay_risk_minutes'],
         'estimated_penalty_amount' => number_format($impact['estimated_penalty_amount'], 2, '.', ''),
+        'cost_amount' => number_format($maintenanceCost, 2, '.', ''),
+        'cost_currency_code' => $currencyCode,
         'duration' => $durationHours,
         'message_id' => $messageId,
     ]);
 
     $eventId = (int)$pdo->lastInsertId();
+
+    $pdo->prepare("
+        UPDATE companies
+        SET budget_amount = budget_amount - :maintenance_cost
+        WHERE id = :company_id
+    ")->execute([
+        'maintenance_cost' => number_format($maintenanceCost, 2, '.', ''),
+        'company_id' => $companyId,
+    ]);
+
+    $pdo->prepare("
+        INSERT INTO company_financial_events (
+          company_id,
+          event_type,
+          amount,
+          currency_code,
+          description,
+          related_entity_type,
+          related_entity_id
+        ) VALUES (
+          :company_id,
+          'AIRCRAFT_MAINTENANCE_COST',
+          :amount,
+          :currency_code,
+          :description,
+          'AIRCRAFT_OPERATIONAL_EVENT',
+          :event_id
+        )
+    ")->execute([
+        'company_id' => $companyId,
+        'amount' => number_format(-$maintenanceCost, 2, '.', ''),
+        'currency_code' => $currencyCode,
+        'description' => sprintf(
+            'Routine maintenance started for %s. Cost paid at maintenance start.',
+            $aircraft['registration_code']
+        ),
+        'event_id' => $eventId,
+    ]);
 
     $pdo->prepare("
         UPDATE company_aircraft
@@ -213,6 +292,8 @@ try {
         'assigned_technician_id' => (int)$technician['id'],
         'assigned_technician_name' => $technician['display_name'],
         'estimated_duration_hours' => $durationHours,
+        'maintenance_cost_amount' => number_format($maintenanceCost, 2, '.', ''),
+        'currency_code' => $currencyCode,
         'impact' => $impact,
     ], 201);
 } catch (Throwable $exception) {
@@ -222,8 +303,23 @@ try {
 
     json_response([
         'error' => 'DATABASE_ERROR',
-        'message' => 'Unable to schedule maintenance.',
+        'message' => 'Unable to start maintenance.',
     ], 500);
+}
+
+function fetch_company_for_update(PDO $pdo, int $companyId): ?array
+{
+    $stmt = $pdo->prepare("
+        SELECT id, company_name, currency_code, budget_amount
+        FROM companies
+        WHERE id = :company_id
+        LIMIT 1
+        FOR UPDATE
+    ");
+    $stmt->execute(['company_id' => $companyId]);
+
+    $row = $stmt->fetch();
+    return $row ?: null;
 }
 
 function fetch_aircraft_for_update(PDO $pdo, int $companyId, int $aircraftId): ?array

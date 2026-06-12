@@ -13,8 +13,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   aircraftId = new URLSearchParams(window.location.search).get("aircraftId");
 
   document.querySelector("#refreshButton")?.addEventListener("click", loadPage);
-  document.querySelector("#scheduleMaintenanceButton")?.addEventListener("click", scheduleMaintenance);
-  document.querySelector("#completeMaintenanceButton")?.addEventListener("click", completeMaintenance);
+  document.querySelector("#scheduleMaintenanceButton")?.addEventListener("click", startMaintenance);
+
+  const completeButton = document.querySelector("#completeMaintenanceButton");
+  if (completeButton) {
+    completeButton.hidden = true;
+  }
 
   if (!aircraftId) {
     showError("Missing aircraftId.");
@@ -68,6 +72,9 @@ function renderAircraft(a) {
     </div>
 
     <p><strong>Required technician license:</strong> ${escapeHtml(a.technician_license_required || "-")}</p>
+    <p><strong>Routine maintenance:</strong> ${escapeHtml(a.routine_maintenance_duration_hours)} h, ${escapeHtml(formatCurrency(a.routine_maintenance_cost_amount, a.currency_code))}</p>
+    <p><strong>Minor repair:</strong> ${escapeHtml(a.minor_repair_duration_hours)} h, ${escapeHtml(formatCurrency(a.minor_repair_cost_amount, a.currency_code))}</p>
+    <p><strong>Major repair:</strong> ${escapeHtml(a.major_repair_duration_hours)} h, ${escapeHtml(formatCurrency(a.major_repair_cost_amount, a.currency_code))}</p>
     <p><strong>Current airport:</strong> ${escapeHtml(a.current_airport_name)} (${escapeHtml(a.current_airport_icao_code)})</p>
     <p><strong>Home base:</strong> ${escapeHtml(a.home_base_name)} (${escapeHtml(a.home_base_icao_code)})</p>
   `;
@@ -96,6 +103,7 @@ function renderEvents(rows) {
         <span class="badge">${escapeHtml(event.status)}</span>
       </p>
       <p>${escapeHtml(event.description)}</p>
+      <p><strong>Cost:</strong> ${escapeHtml(formatCurrency(event.cost_amount, event.cost_currency_code || currentAircraft?.currency_code))}</p>
       <p><strong>Started:</strong> ${escapeHtml(event.started_at_utc)}</p>
       <p><strong>Estimated done:</strong> ${escapeHtml(event.estimated_completed_at_utc || "-")}</p>
       <p><strong>Completed:</strong> ${escapeHtml(event.completed_at_utc || "-")}</p>
@@ -103,10 +111,13 @@ function renderEvents(rows) {
   `).join("")}</div>`;
 }
 
-async function scheduleMaintenance() {
+async function startMaintenance() {
   if (!currentAircraft) return;
 
-  if (!confirm(`Schedule maintenance for ${currentAircraft.registration_code}?`)) {
+  const cost = formatCurrency(currentAircraft.routine_maintenance_cost_amount, currentAircraft.currency_code);
+  const duration = currentAircraft.routine_maintenance_duration_hours;
+
+  if (!confirm(`Start maintenance for ${currentAircraft.registration_code}?\n\nDuration: ${duration} h\nCost: ${cost}`)) {
     return;
   }
 
@@ -114,7 +125,7 @@ async function scheduleMaintenance() {
     await postJson(API.schedule, { aircraft_id: Number(currentAircraft.aircraft_id) });
     await loadPage();
   } catch (error) {
-    showError(error.message || "Unable to schedule maintenance.");
+    showError(error.message || "Unable to start maintenance.");
   }
 }
 
@@ -192,6 +203,13 @@ function hideError() {
   const error = document.querySelector("#pageError");
   error.hidden = true;
   error.textContent = "";
+}
+
+function formatCurrency(amount, currencyCode) {
+  const currency = currencyCode || "EUR";
+  const symbol = currency === "USD" ? "$" : "€";
+  const numeric = Number(amount || 0);
+  return `${symbol} ${numeric.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function escapeHtml(value) {
