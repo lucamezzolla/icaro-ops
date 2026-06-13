@@ -773,3 +773,33 @@ dialog .dialog-footer {
 .passenger-demand-table {
   min-width: 1260px;
 }
+
+
+.economic-preview-sustainability {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.economic-preview-sustainability-ok {
+  border: 1px solid rgba(92, 221, 142, .28);
+  background: rgba(92, 221, 142, .10);
+  color: var(--text);
+}
+
+.economic-preview-sustainability-warning {
+  border: 1px solid rgba(255, 184, 76, .32);
+  background: rgba(255, 184, 76, .12);
+  color: var(--text);
+}
+
+.economic-aircraft-comparison-table {
+  min-width: 1480px;
+}
+
+.economic-aircraft-comparison-table .mini-button {
+  padding: 7px 10px;
+  white-space: nowrap;
+}

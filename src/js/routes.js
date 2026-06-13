@@ -420,7 +420,9 @@ async function previewFlight(options = {}) {
     }
 
     content.innerHTML = `<p class="muted">Calculating route economics...</p>`;
-    dialog.showModal();
+    if (!dialog.open) {
+      dialog.showModal();
+    }
   }
 
   try {
@@ -435,6 +437,7 @@ async function previewFlight(options = {}) {
     if (!silent && content) {
       content.innerHTML = renderPreview(preview);
       bindEconomicAircraftSelector(preview);
+      bindEconomicPriceActions(preview);
     }
   } catch (error) {
     if (!silent && content) {
@@ -680,6 +683,7 @@ function renderPreview(preview, selectedAircraftId = null) {
           ${previewKpi("Expected pax", expectedPassengers)}
         </div>
         <p class="economic-preview-recommendation">${escapeHtml(preview.recommendation || "")}</p>
+        ${renderCurrentTicketSustainability(aircraftPreviews, currency)}
       </section>
 
       ${section("Flight operating costs for selected aircraft", [
@@ -768,7 +772,74 @@ function bindEconomicAircraftSelector(preview) {
   selector.addEventListener("change", () => {
     content.innerHTML = renderPreview(preview, selector.value);
     bindEconomicAircraftSelector(preview);
+    bindEconomicPriceActions(preview);
   });
+}
+
+function bindEconomicPriceActions(preview) {
+  document.querySelectorAll(".use-economic-aircraft-price").forEach(button => {
+    if (button.dataset.bound) {
+      return;
+    }
+
+    button.dataset.bound = "true";
+    button.addEventListener("click", async () => {
+      const ticket = Number(button.dataset.ticket || 0);
+      const ticketInput = document.querySelector("#ticketPrice");
+
+      if (!ticketInput || ticket <= 0) {
+        return;
+      }
+
+      ticketInput.value = ticket.toFixed(2);
+      button.textContent = "Applied";
+      button.disabled = true;
+
+      await previewFlight();
+    });
+  });
+}
+
+function renderCurrentTicketSustainability(rows, currency) {
+  if (!Array.isArray(rows) || rows.length <= 1) {
+    return "";
+  }
+
+  const riskyRows = rows.filter(row => Number(row.expected_profit || 0) < 0);
+  const safeRows = rows.filter(row => Number(row.expected_profit || 0) >= 0);
+
+  if (!riskyRows.length) {
+    return `
+      <p class="economic-preview-sustainability economic-preview-sustainability-ok">
+        Current ticket price is sustainable for all selected aircraft at the 75% planning load.
+      </p>
+    `;
+  }
+
+  const riskyNames = riskyRows
+    .slice(0, 4)
+    .map(row => previewAircraftLabel(row.aircraft || {}))
+    .join(", ");
+
+  const text = safeRows.length
+    ? `Current ticket price is profitable for some aircraft, but not for: ${riskyNames}${riskyRows.length > 4 ? ", ..." : ""}.`
+    : `Current ticket price is not sustainable for any selected aircraft at the 75% planning load.`;
+
+  return `
+    <p class="economic-preview-sustainability economic-preview-sustainability-warning">
+      ${escapeHtml(text)} Use one of the aircraft-specific market tickets below or reduce the compatible aircraft list.
+    </p>
+  `;
+}
+
+function previewScenarioForLoad(row, loadFactorPercent) {
+  const scenarios = row.load_factor_scenarios || [];
+  return scenarios.find(scenario => Number(scenario.load_factor_percent || 0) === Number(loadFactorPercent)) || null;
+}
+
+function ticketButtonLabel(row) {
+  const ticket = Number(row.suggested_ticket_price || 0);
+  return ticket > 0 ? "Use this price" : "No price";
 }
 
 function renderEconomicScenarioTable(scenarios, currency) {
@@ -864,7 +935,7 @@ function renderAircraftPreviewTable(rows, currency, selectedAircraft = {}) {
 
   return `
     <div class="table-wrap economic-preview-table-wrap">
-      <table class="economic-preview-table">
+      <table class="economic-preview-table economic-aircraft-comparison-table">
         <thead>
           <tr>
             <th>Aircraft</th>
@@ -875,14 +946,20 @@ function renderAircraftPreviewTable(rows, currency, selectedAircraft = {}) {
             <th>Crew</th>
             <th>Total cost</th>
             <th>75% pax</th>
-            <th>75% profit</th>
+            <th>75% profit at current ticket</th>
+            <th>Break-even 75%</th>
             <th>Market ticket</th>
+            <th>Market profit 75%</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody>
           ${rows.map(row => {
             const aircraft = row.aircraft || {};
             const active = String(aircraft.id || "") === selectedId;
+            const scenario75 = previewScenarioForLoad(row, 75);
+            const marketTicket = Number(row.suggested_ticket_price || 0);
+            const canUsePrice = marketTicket > 0;
             return `
               <tr class="${active ? "economic-aircraft-selected-row" : ""}">
                 <td>${escapeHtml(previewAircraftLabel(aircraft))}</td>
@@ -894,7 +971,18 @@ function renderAircraftPreviewTable(rows, currency, selectedAircraft = {}) {
                 <td>${formatPreviewMoney(row.costs?.total_operating_cost, currency)}</td>
                 <td>${escapeHtml(row.expected_passengers)}</td>
                 <td class="${previewProfitClass(row.expected_profit)}">${formatPreviewMoney(row.expected_profit, currency)}</td>
-                <td>${formatPreviewMoney(row.suggested_ticket_price, currency)}</td>
+                <td>${formatPreviewMoney(row.break_even_ticket_at_expected_load, currency)}</td>
+                <td><strong>${formatPreviewMoney(row.suggested_ticket_price, currency)}</strong></td>
+                <td class="${previewProfitClass(scenario75?.market_profit)}">${formatPreviewMoney(scenario75?.market_profit, currency)}</td>
+                <td>
+                  <button
+                    type="button"
+                    class="secondary-button mini-button use-economic-aircraft-price"
+                    data-aircraft-id="${escapeHtml(aircraft.id || "")}" 
+                    data-ticket="${escapeHtml(canUsePrice ? marketTicket.toFixed(2) : "0")}" 
+                    ${canUsePrice ? "" : "disabled"}
+                  >${escapeHtml(ticketButtonLabel(row))}</button>
+                </td>
               </tr>
             `;
           }).join("")}
