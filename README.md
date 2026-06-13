@@ -1,5 +1,7 @@
 # Icaro Ops
 
+[![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?logo=paypal&logoColor=white)](https://www.paypal.com/paypalme/lucamezzolla82)
+
 A persistent virtual airline operations management web game.
 
 ## Vision
@@ -49,7 +51,7 @@ Planned map:
 
 - MapLibre GL JS
 
-## Trisquel Linux local run
+## Local run
 
 From the project folder:
 
@@ -66,33 +68,5 @@ http://localhost:8080
 ## Suggested local path
 
 ```bash
-/home/luca/Documenti/html/icaro-ops
+/home/luca/icaro-ops
 ```
-
-## Git initialization
-
-```bash
-cd /home/luca/Documenti/html/icaro-ops
-git init
-git add .
-git commit -m "Initial frontend prototype"
-```
-
-Then create a GitHub repository and connect it:
-
-```bash
-git branch -M main
-git remote add origin git@github.com:YOUR_USERNAME/icaro-ops.git
-git push -u origin main
-```
-
-## Database draft
-
-The first MySQL draft is in:
-
-```text
-db/mysql/001_create_airports.sql
-db/mysql/002_seed_starter_airports.sql
-```
-
-This is not yet required to run the frontend prototype.
