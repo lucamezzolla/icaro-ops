@@ -725,6 +725,7 @@ function renderEconomicScenarioTable(scenarios, currency) {
             <th>Total cost</th>
             <th>Profit</th>
             <th>Break-even ticket</th>
+            <th>Recommended ticket</th>
           </tr>
         </thead>
         <tbody>
@@ -739,6 +740,7 @@ function renderEconomicScenarioTable(scenarios, currency) {
               <td>${formatPreviewMoney(row.total_operating_cost, currency)}</td>
               <td class="${previewProfitClass(row.profit)}">${formatPreviewMoney(row.profit, currency)}</td>
               <td>${formatPreviewMoney(row.break_even_ticket_price, currency)}</td>
+              <td>${formatPreviewMoney(row.recommended_ticket_price, currency)}</td>
             </tr>
           `).join("")}
         </tbody>

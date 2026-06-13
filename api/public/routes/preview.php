@@ -249,6 +249,7 @@ function build_aircraft_preview(PDO $pdo, int $companyId, array $model, float $d
             'total_operating_cost' => money($totalCost),
             'profit' => money($profit),
             'break_even_ticket_price' => money($totalCost / max(1, $passengers)),
+            'recommended_ticket_price' => money(suggest_ticket_price($totalCost, max(1, $passengers), 0.18)),
         ];
     }
 
