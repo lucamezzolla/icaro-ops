@@ -40,6 +40,7 @@ $stmt = $pdo->prepare("
       ss.allow_extra_flights,
 
       ar.route_code,
+      ar.route_category_code,
       ar.origin_airport_icao_code,
       ar.destination_airport_icao_code,
       ar.route_scope,

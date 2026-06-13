@@ -30,6 +30,7 @@ $stmt = $pdo->prepare("
       {$serviceTypeExpr},
       {$compatibleModelsExpr},
       ar.route_code,
+      ar.route_category_code,
       ar.origin_airport_icao_code,
       ar.destination_airport_icao_code,
       ar.route_scope,

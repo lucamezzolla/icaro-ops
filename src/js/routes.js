@@ -1,6 +1,7 @@
 const API = {
   routes: "api/public/routes/list.php",
   create: "api/public/routes/create.php",
+  update: "api/public/routes/update.php",
   detail: id => `api/public/routes/detail.php?serviceId=${encodeURIComponent(id)}`,
   preview: "api/public/routes/preview.php",
   startServiceFlight: "api/public/flights/start-service-now.php",
@@ -14,6 +15,7 @@ const API = {
 let flights = [];
 let flightFiltersApplied = false;
 let lastSuggestedTicketPrice = null;
+let editingFlightServiceId = null;
 
 document.addEventListener("DOMContentLoaded", async () => {
   startUtcClock();
@@ -260,6 +262,7 @@ function renderFlights(rows) {
       <td>
         <div class="button-row">
           <button type="button" data-flight-detail="${flight.service_id}">Details</button>
+          <button type="button" data-edit-flight="${flight.service_id}" class="secondary">Edit</button>
           ${isOnDemandFlight(flight) ? `<button type="button" data-start-flight="${flight.service_id}" class="secondary">Start flight now</button>` : ""}
         </div>
       </td>
@@ -268,6 +271,10 @@ function renderFlights(rows) {
 
   tbody.querySelectorAll("[data-flight-detail]").forEach(button => {
     button.addEventListener("click", () => openFlightDetail(Number(button.dataset.flightDetail)));
+  });
+
+  tbody.querySelectorAll("[data-edit-flight]").forEach(button => {
+    button.addEventListener("click", () => openEditFlightDialog(Number(button.dataset.editFlight)));
   });
 
   tbody.querySelectorAll("[data-start-flight]").forEach(button => {
@@ -280,6 +287,8 @@ function renderFlights(rows) {
 }
 
 function openAddFlightDialog() {
+  editingFlightServiceId = null;
+
   const dialog = document.querySelector("#routeDialog");
 
   if (!dialog) {
@@ -289,6 +298,8 @@ function openAddFlightDialog() {
 
   clearDialogError();
 
+  document.querySelector("#routeDialogTitle").textContent = "Add flight";
+  document.querySelector("#saveRouteButton").textContent = "Create flight";
   document.querySelector("#originAirport").value = "";
   document.querySelector("#destinationAirport").value = "";
 
@@ -317,6 +328,58 @@ function openAddFlightDialog() {
   loadOwnedAircraftModelsForFlight();
 
   dialog.showModal();
+}
+
+async function openEditFlightDialog(serviceId) {
+  hideError();
+  clearDialogError();
+
+  const dialog = document.querySelector("#routeDialog");
+
+  if (!dialog) {
+    showError("Flight dialog not found.");
+    return;
+  }
+
+  try {
+    const data = await getJson(API.detail(serviceId));
+    const flight = data.service;
+
+    editingFlightServiceId = Number(flight.id || flight.service_id || serviceId);
+
+    document.querySelector("#routeDialogTitle").textContent = `Edit flight ${publicFlightCode(flight)}`;
+    document.querySelector("#saveRouteButton").textContent = "Save changes";
+    document.querySelector("#originAirport").value = flight.origin_airport_icao_code || "";
+    document.querySelector("#destinationAirport").value = flight.destination_airport_icao_code || "";
+
+    const typeSelect = getFlightTypeSelect();
+    if (typeSelect) {
+      typeSelect.value = flight.service_type || (flight.scheduled_departure_time_utc ? "SCHEDULED" : "ON_DEMAND");
+    }
+
+    const categorySelect = document.querySelector("#routeCategory");
+    if (categorySelect) {
+      categorySelect.value = flight.route_category_code || "";
+    }
+
+    const scheduledTime = document.querySelector("#scheduledTime");
+    if (scheduledTime) {
+      scheduledTime.value = String(flight.scheduled_departure_time_utc || "").slice(0, 5);
+    }
+
+    document.querySelector("#ticketPrice").value = Number(flight.base_ticket_price || flight.ticket_price || 0).toFixed(2);
+    document.querySelector("#routePreviewPanel").hidden = true;
+    document.querySelector("#routePreviewContent").innerHTML = "";
+
+    setupFlightTypeToggle();
+    setupFlightTypeExplanation();
+    applyFlightTypeState();
+    await loadOwnedAircraftModelsForFlight(splitModelCodes(flight.compatible_aircraft_model_codes));
+
+    dialog.showModal();
+  } catch (error) {
+    showError(error.message || "Unable to load flight for editing.");
+  }
 }
 
 async function previewFlight(options = {}) {
@@ -359,12 +422,20 @@ async function saveFlight(event) {
 
   clearDialogError();
 
+  const payload = flightFormPayload();
+  const isEditing = Boolean(editingFlightServiceId);
+
+  if (isEditing) {
+    payload.service_id = editingFlightServiceId;
+  }
+
   try {
-    await postJson(API.create, flightFormPayload());
+    await postJson(isEditing ? API.update : API.create, payload);
     document.querySelector("#routeDialog").close();
+    editingFlightServiceId = null;
     await loadFlights();
   } catch (error) {
-    showDialogError(error.message || "Unable to create flight.");
+    showDialogError(error.message || (isEditing ? "Unable to update flight." : "Unable to create flight."));
   }
 }
 
@@ -451,9 +522,15 @@ async function openFlightDetail(serviceId) {
         </section>
       </div>
       <div class="dialog-action-bar">
+        <button type="button" id="editServiceButton" class="secondary">Edit flight</button>
         <button type="button" class="danger" id="removeServiceButton">Remove flight</button>
       </div>
     `;
+
+    content.querySelector("#editServiceButton")?.addEventListener("click", () => {
+      document.querySelector("#routeDetailDialog")?.close();
+      openEditFlightDialog(Number(flight.id || flight.service_id));
+    });
 
     content.querySelector("#removeServiceButton")?.addEventListener("click", () => removeFlight(Number(flight.id || flight.service_id)));
   } catch (error) {
@@ -566,12 +643,14 @@ function renderPreview(preview) {
 }
 
 
-async function loadOwnedAircraftModelsForFlight() {
+async function loadOwnedAircraftModelsForFlight(selectedModelCodes = []) {
   const container = document.querySelector("#ownedAircraftModelChoices");
 
   if (!container) {
     return;
   }
+
+  const selected = new Set((selectedModelCodes || []).map(code => String(code || "").trim().toUpperCase()).filter(Boolean));
 
   container.innerHTML = `<p class="muted">Loading owned airplanes...</p>`;
 
@@ -584,28 +663,44 @@ async function loadOwnedAircraftModelsForFlight() {
       return;
     }
 
-    container.innerHTML = models.map(model => `
-      <label class="choice-row">
-        <input
-          type="checkbox"
-          name="selected_aircraft_model_codes"
-          value="${escapeHtml(model.model_code)}"
-          ${models.length === 1 ? "checked" : ""}
-        >
-        <span>
-          <strong>${escapeHtml(model.icao_type_code || model.model_code)}</strong>
-          ${escapeHtml(model.manufacturer || "")} ${escapeHtml(model.model_name || "")}
-          <small class="muted">
-            Owned: ${escapeHtml(model.owned_count || 0)}
-            · Available: ${escapeHtml(model.available_count || 0)}
-            · Registrations: ${escapeHtml(model.registrations || "-")}
-          </small>
-        </span>
-      </label>
-    `).join("");
+    container.innerHTML = models.map(model => {
+      const code = String(model.model_code || "").trim().toUpperCase();
+      const checked = selected.size ? selected.has(code) : models.length === 1;
+
+      return `
+        <label class="choice-row">
+          <input
+            type="checkbox"
+            name="selected_aircraft_model_codes"
+            value="${escapeHtml(model.model_code)}"
+            ${checked ? "checked" : ""}
+          >
+          <span>
+            <strong>${escapeHtml(model.icao_type_code || model.model_code)}</strong>
+            ${escapeHtml(model.manufacturer || "")} ${escapeHtml(model.model_name || "")}
+            <small class="muted">
+              Owned: ${escapeHtml(model.owned_count || 0)}
+              · Available: ${escapeHtml(model.available_count || 0)}
+              · Registrations: ${escapeHtml(model.registrations || "-")}
+            </small>
+          </span>
+        </label>
+      `;
+    }).join("");
+
+    if (selected.size && !Array.from(container.querySelectorAll("input[name='selected_aircraft_model_codes']:checked")).length) {
+      container.insertAdjacentHTML("afterbegin", `<p class="page-error">The previously selected airplane model is no longer in your fleet. Select a new model before saving.</p>`);
+    }
   } catch (error) {
     container.innerHTML = `<p class="page-error">${escapeHtml(error.message || "Unable to load owned airplanes.")}</p>`;
   }
+}
+
+function splitModelCodes(value) {
+  return String(value || "")
+    .split(",")
+    .map(code => code.trim().toUpperCase())
+    .filter(Boolean);
 }
 
 function selectedAircraftModelCodes() {
