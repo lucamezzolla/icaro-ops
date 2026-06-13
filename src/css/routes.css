@@ -503,6 +503,26 @@ dialog .dialog-footer {
   line-height: 1;
 }
 
+
+.flight-log-action-button {
+  min-height: 38px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--warn), #f0a84e);
+  color: #1c1303;
+  font-weight: 900;
+  text-decoration: none;
+  white-space: nowrap;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, .18);
+}
+
+.flight-log-action-button:hover {
+  background: linear-gradient(135deg, #ffe1a3, var(--warn));
+  color: #1c1303;
+}
+
 /* Unified filter panel, aligned with the Buy new aircraft market filters. */
 .aircraft-market-filter-panel,
 .flight-filter-panel {

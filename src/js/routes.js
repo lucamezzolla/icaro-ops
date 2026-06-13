@@ -262,7 +262,6 @@ function renderFlights(rows) {
       <td>
         <div class="button-row">
           <button type="button" data-flight-detail="${flight.service_id}">Details</button>
-          <button type="button" data-edit-flight="${flight.service_id}" class="secondary">Edit</button>
           ${isOnDemandFlight(flight) ? `<button type="button" data-start-flight="${flight.service_id}" class="secondary">Start flight now</button>` : ""}
         </div>
       </td>
@@ -272,11 +271,6 @@ function renderFlights(rows) {
   tbody.querySelectorAll("[data-flight-detail]").forEach(button => {
     button.addEventListener("click", () => openFlightDetail(Number(button.dataset.flightDetail)));
   });
-
-  tbody.querySelectorAll("[data-edit-flight]").forEach(button => {
-    button.addEventListener("click", () => openEditFlightDialog(Number(button.dataset.editFlight)));
-  });
-
   tbody.querySelectorAll("[data-start-flight]").forEach(button => {
     button.addEventListener("click", () => startFlightNow(Number(button.dataset.startFlight)));
   });
