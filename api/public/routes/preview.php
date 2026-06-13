@@ -87,9 +87,11 @@ foreach ($models as $model) {
 }
 
 $pricingPreview = select_pricing_preview($initialPreviews);
-$suggestedTicket = suggest_ticket_price(
+$suggestedTicket = suggest_market_ticket_price_for_load(
     (float)$pricingPreview['costs']['total_operating_cost_raw'],
     max(1, (int)$pricingPreview['expected_passengers']),
+    75,
+    $pricingPreview['aircraft'],
     0.18
 );
 
@@ -133,6 +135,7 @@ json_response([
         'fuel_note' => 'Fuel is estimated with the same 1.20 unit price used by current dispatch calculations.',
         'maintenance_note' => 'Maintenance reserve is the aircraft hourly maintenance cost multiplied by estimated block hours.',
         'fixed_cost_note' => 'Daily retainers and company fixed costs are not charged to this single-flight preview.',
+        'market_pricing_note' => 'Market recommended ticket uses the 75% load scenario as reference, then adjusts by expected demand, seat scarcity and aircraft prestige.',
         'selected_reference_pilots' => $selectedPreview['pilots'],
         'qualified_pilots_found' => (int)$selectedPreview['qualified_pilots_found'],
         'required_pilots' => 2,
@@ -239,6 +242,17 @@ function build_aircraft_preview(PDO $pdo, int $companyId, array $model, float $d
         $passengers = max(1, min($capacity, (int)floor($capacity * ($loadFactorPercent / 100))));
         $revenue = $passengers * $ticketPrice;
         $profit = $revenue - $totalCost;
+        $breakEvenTicket = $totalCost / max(1, $passengers);
+        $marketRecommendedTicket = suggest_market_ticket_price_for_load(
+            $totalCost,
+            $expectedPassengers,
+            $loadFactorPercent,
+            $model,
+            0.18
+        );
+        $marketRevenue = $passengers * $marketRecommendedTicket;
+        $marketProfit = $marketRevenue - $totalCost;
+
         $scenarios[] = [
             'load_factor_percent' => $loadFactorPercent,
             'passengers' => $passengers,
@@ -248,8 +262,12 @@ function build_aircraft_preview(PDO $pdo, int $companyId, array $model, float $d
             'staff_cost' => money($staffCost),
             'total_operating_cost' => money($totalCost),
             'profit' => money($profit),
-            'break_even_ticket_price' => money($totalCost / max(1, $passengers)),
-            'recommended_ticket_price' => money(suggest_ticket_price($totalCost, max(1, $passengers), 0.18)),
+            'break_even_ticket_price' => money($breakEvenTicket),
+            'market_recommended_ticket_price' => money($marketRecommendedTicket),
+            'market_revenue' => money($marketRevenue),
+            'market_profit' => money($marketProfit),
+            'market_signal' => market_signal($marketProfit, $marketRecommendedTicket, $breakEvenTicket, $loadFactorPercent),
+            'demand_multiplier' => money(demand_multiplier_for_load($loadFactorPercent)),
         ];
     }
 
@@ -382,8 +400,91 @@ function legacy_estimates(array $scenarios): array
 
 function suggest_ticket_price(float $expectedCost, int $expectedPassengers, float $targetMargin): float
 {
-    $raw = ($expectedCost * (1.0 + $targetMargin)) / max(1, $expectedPassengers);
+    return round_ticket_price(($expectedCost * (1.0 + $targetMargin)) / max(1, $expectedPassengers));
+}
 
+function suggest_market_ticket_price_for_load(
+    float $expectedCost,
+    int $expectedPassengers,
+    int $loadFactorPercent,
+    array $aircraft,
+    float $targetMargin
+): float {
+    $baseTicket = suggest_ticket_price($expectedCost, $expectedPassengers, $targetMargin);
+    $raw = $baseTicket
+        * demand_multiplier_for_load($loadFactorPercent)
+        * aircraft_prestige_multiplier($aircraft);
+
+    return round_ticket_price($raw);
+}
+
+function demand_multiplier_for_load(int $loadFactorPercent): float
+{
+    if ($loadFactorPercent >= 100) {
+        return 1.45;
+    }
+
+    if ($loadFactorPercent >= 90) {
+        return 1.30;
+    }
+
+    if ($loadFactorPercent >= 75) {
+        return 1.15;
+    }
+
+    if ($loadFactorPercent >= 50) {
+        return 1.00;
+    }
+
+    return 0.85;
+}
+
+function aircraft_prestige_multiplier(array $aircraft): float
+{
+    $modelCode = strtoupper((string)($aircraft['model_code'] ?? ''));
+    $icaoCode = strtoupper((string)($aircraft['icao_type_code'] ?? ''));
+    $modelName = strtoupper((string)($aircraft['model_name'] ?? ''));
+
+    if ($icaoCode === 'CONC' || str_contains($modelCode, 'CONC') || str_contains($modelName, 'CONCORDE')) {
+        return 1.35;
+    }
+
+    foreach (['A388', 'A380', 'B748', '748_', 'B744', 'B747', 'B77', 'B78', 'A359', 'A35', 'A346', 'A343'] as $needle) {
+        if (str_contains($icaoCode, $needle) || str_contains($modelCode, $needle)) {
+            return 1.08;
+        }
+    }
+
+    return 1.00;
+}
+
+function market_signal(float $marketProfit, float $marketTicket, float $breakEvenTicket, int $loadFactorPercent): string
+{
+    if ($marketTicket < $breakEvenTicket) {
+        return 'Weak demand / market price below break-even';
+    }
+
+    if ($marketProfit < 0) {
+        return 'Risky demand / likely loss';
+    }
+
+    if ($loadFactorPercent >= 90) {
+        return 'Strong demand / scarce seats';
+    }
+
+    if ($loadFactorPercent >= 75) {
+        return 'Healthy demand';
+    }
+
+    if ($loadFactorPercent >= 50) {
+        return 'Moderate demand';
+    }
+
+    return 'Weak demand / low occupancy';
+}
+
+function round_ticket_price(float $raw): float
+{
     if ($raw < 80) {
         return ceil($raw / 5) * 5;
     }
@@ -392,7 +493,11 @@ function suggest_ticket_price(float $expectedCost, int $expectedPassengers, floa
         return ceil($raw / 10) * 10;
     }
 
-    return ceil($raw / 25) * 25;
+    if ($raw < 1000) {
+        return ceil($raw / 25) * 25;
+    }
+
+    return ceil($raw / 50) * 50;
 }
 
 function recommendation(?int $breakEvenPassengers, int $capacity, float $expectedProfit): string

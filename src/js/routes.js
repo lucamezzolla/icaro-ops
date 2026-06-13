@@ -682,7 +682,7 @@ function renderPreview(preview) {
 
     <section class="detail-section economic-preview-section">
       <h3>Profit forecast by passenger load</h3>
-      <p class="muted">These scenarios show what happens if the aircraft departs with different passenger loads.</p>
+      <p class="muted">Break-even is the minimum cost-covering price. Market recommended ticket rises with demand, seat scarcity and aircraft prestige.</p>
       ${renderEconomicScenarioTable(scenarios, currency)}
     </section>
 
@@ -700,6 +700,7 @@ function renderPreview(preview) {
         <li>${escapeHtml(preview.cost_model?.fuel_note || "Fuel cost is estimated from aircraft fuel burn and block time.")}</li>
         <li>${escapeHtml(preview.cost_model?.maintenance_note || "Maintenance reserve is charged per estimated flight hour.")}</li>
         <li>${escapeHtml(preview.cost_model?.fixed_cost_note || "Fixed company costs are not included in this single-flight preview.")}</li>
+        <li>${escapeHtml(preview.cost_model?.market_pricing_note || "Market recommended ticket rises with demand and seat scarcity; break-even remains the minimum cost-covering price.")}</li>
         <li>Qualified pilots found: ${escapeHtml(preview.cost_model?.qualified_pilots_found ?? 0)} / ${escapeHtml(preview.cost_model?.required_pilots ?? 2)}</li>
       </ul>
     </section>
@@ -725,7 +726,9 @@ function renderEconomicScenarioTable(scenarios, currency) {
             <th>Total cost</th>
             <th>Profit</th>
             <th>Break-even ticket</th>
-            <th>Recommended ticket</th>
+            <th>Market ticket</th>
+            <th>Market profit</th>
+            <th>Signal</th>
           </tr>
         </thead>
         <tbody>
@@ -740,7 +743,9 @@ function renderEconomicScenarioTable(scenarios, currency) {
               <td>${formatPreviewMoney(row.total_operating_cost, currency)}</td>
               <td class="${previewProfitClass(row.profit)}">${formatPreviewMoney(row.profit, currency)}</td>
               <td>${formatPreviewMoney(row.break_even_ticket_price, currency)}</td>
-              <td>${formatPreviewMoney(row.recommended_ticket_price, currency)}</td>
+              <td>${formatPreviewMoney(row.market_recommended_ticket_price, currency)}</td>
+              <td class="${previewProfitClass(row.market_profit)}">${formatPreviewMoney(row.market_profit, currency)}</td>
+              <td>${escapeHtml(row.market_signal || "-")}</td>
             </tr>
           `).join("")}
         </tbody>
