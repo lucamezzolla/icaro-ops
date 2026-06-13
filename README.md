@@ -31,25 +31,30 @@ Only the game interface is multilingual.
 
 ## Initial technology choice
 
-Frontend prototype:
-
-- HTML
+Frontend:
+- static HTML pages
 - CSS
-- modern JavaScript modules
-- localStorage for the first prototype state
+- vanilla JavaScript
+- fetch-based API calls
+- localStorage for small UI preferences
+- Leaflet for the live map
 
-Planned backend:
+Backend:
+- PHP JSON API
+- PDO database access
+- session-based authentication
+- MariaDB / MySQL-compatible database
+- manual SQL bootstrap and patch scripts
 
-- Java 21
-- Spring Boot
-- MySQL 8
-- Flyway
-- REST API
-- SSE or WebSocket for live updates
+Database:
+- MariaDB 10.11 in the current local environment
+- MySQL-compatible schema
+- db/mysql/000_bootstrap_icaro_ops.sql
+- incremental SQL patches
 
-Planned map:
-
-- MapLibre GL JS
+Live updates:
+- currently handled by refresh/API polling style flows
+- SSE/WebSocket not implemented yet
 
 ## Local run
 
