@@ -238,6 +238,13 @@ function build_aircraft_preview(PDO $pdo, int $companyId, array $model, float $d
     $totalCost = $fuelCost + $maintenanceCost + $staffCost;
     $expectedPassengers = max(1, min($capacity, (int)floor($capacity * 0.75)));
     $breakEvenTicketExpected = $totalCost / max(1, $expectedPassengers);
+    $marketReferenceTicket = suggest_market_ticket_price_for_load(
+        $totalCost,
+        $expectedPassengers,
+        75,
+        $model,
+        0.18
+    );
 
     $scenarios = [];
     foreach ([25, 50, 75, 90, 100] as $loadFactorPercent) {
