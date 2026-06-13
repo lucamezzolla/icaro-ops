@@ -286,6 +286,24 @@ function renderFlights(rows) {
   });
 }
 
+function resetFlightEconomicsPreview() {
+  const previewPanel = document.querySelector("#routePreviewPanel");
+  const previewContent = document.querySelector("#routePreviewContent");
+
+  if (previewPanel) {
+    previewPanel.hidden = true;
+  }
+
+  if (previewContent) {
+    previewContent.innerHTML = "";
+  }
+
+  const economicPreviewContent = document.querySelector("#economicPreviewContent");
+  if (economicPreviewContent) {
+    economicPreviewContent.textContent = "Select a route and airplane, then click Preview economics.";
+  }
+}
+
 function openAddFlightDialog() {
   editingFlightServiceId = null;
 
@@ -370,8 +388,7 @@ async function openEditFlightDialog(serviceId) {
     }
 
     document.querySelector("#ticketPrice").value = Number(flight.base_ticket_price || flight.ticket_price || 0).toFixed(2);
-    document.querySelector("#routePreviewPanel").hidden = true;
-    document.querySelector("#routePreviewContent").innerHTML = "";
+    resetFlightEconomicsPreview();
 
     setupFlightTypeToggle();
     setupFlightTypeExplanation();
