@@ -164,11 +164,27 @@
           </div>
         </div>
 
-        <section id="routePreviewPanel" class="preview-panel" hidden>
-          <h3>Service economic preview</h3>
-          <div id="routePreviewContent"></div>
-        </section>
       </div>
+    </form>
+  </dialog>
+
+  <dialog id="economicPreviewDialog">
+    <form method="dialog" class="dialog-card">
+      <header class="dialog-header">
+        <div>
+          <p class="eyebrow">Economic preview</p>
+          <h2>Flight profitability forecast</h2>
+        </div>
+        <button type="button" value="close" class="close-button" aria-label="Close">×</button>
+      </header>
+
+      <div id="economicPreviewContent" class="dialog-body">
+        Select a route and airplane, then click Preview economics.
+      </div>
+
+      <footer class="dialog-footer">
+        <button value="close">Close</button>
+      </footer>
     </form>
   </dialog>
 

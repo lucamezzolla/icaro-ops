@@ -319,8 +319,10 @@ function openAddFlightDialog() {
   }
 
   document.querySelector("#ticketPrice").value = "0.00";
-  document.querySelector("#routePreviewPanel").hidden = true;
-  document.querySelector("#routePreviewContent").innerHTML = "";
+  const economicPreviewContent = document.querySelector("#economicPreviewContent");
+  if (economicPreviewContent) {
+    economicPreviewContent.textContent = "Select a route and airplane, then click Preview economics.";
+  }
 
   setupFlightTypeToggle();
   setupFlightTypeExplanation();
@@ -386,15 +388,22 @@ async function previewFlight(options = {}) {
   const payload = flightFormPayload();
   const silent = Boolean(options.silent);
   const error = document.querySelector("#routeDialogError");
-  const panel = document.querySelector("#routePreviewPanel");
-  const content = document.querySelector("#routePreviewContent");
+  const dialog = document.querySelector("#economicPreviewDialog");
+  const content = document.querySelector("#economicPreviewContent");
 
-  error.hidden = true;
-  error.textContent = "";
+  if (error) {
+    error.hidden = true;
+    error.textContent = "";
+  }
 
   if (!silent) {
-    panel.hidden = false;
-    content.textContent = "Calculating preview...";
+    if (!dialog || !content) {
+      showDialogError("Economic preview dialog not found.");
+      return;
+    }
+
+    content.innerHTML = `<p class="muted">Calculating route economics...</p>`;
+    dialog.showModal();
   }
 
   try {
@@ -405,14 +414,14 @@ async function previewFlight(options = {}) {
       document.querySelector("#ticketPrice").value = lastSuggestedTicketPrice.toFixed(2);
     }
 
-    if (!silent) {
-      panel.hidden = false;
+    if (!silent && content) {
       content.innerHTML = renderPreview(preview);
     }
   } catch (error) {
-    if (!silent) {
-      panel.hidden = true;
-      showDialogError(error.message || "Unable to preview flight.");
+    if (!silent && content) {
+      content.innerHTML = `<p class="page-error">${escapeHtml(error.message || "Unable to preview flight economics.")}</p>`;
+    } else if (!silent) {
+      showDialogError(error.message || "Unable to preview flight economics.");
     }
   }
 }
@@ -621,25 +630,168 @@ function ensureAircraftModelDialog() {
 }
 
 function renderPreview(preview) {
+  const currency = preview.currency_code || "EUR";
+  const scenarios = preview.load_factor_scenarios || [];
+  const aircraftPreviews = preview.aircraft_previews || [];
+  const aircraft = preview.aircraft || {};
+
   return `
-    <div class="detail-grid">
-      ${section("Flight", [
-        ["Route", `${preview.origin_airport_icao_code} → ${preview.destination_airport_icao_code}`],
-        ["Distance", `${preview.planned_distance_km} km`],
-        ["Duration", `${preview.planned_duration_minutes} min`],
-        ["Ticket", `${money(preview.ticket_price)} ${preview.currency_code}`],
-        ["Suggested ticket", `${money(preview.suggested_ticket_price || 0)} ${preview.currency_code}`]
-      ])}
-      ${section("Expected economics", [
-        ["Expected pax", `${preview.estimates.expected.passengers} / ${preview.passenger_capacity}`],
-        ["Revenue", `${money(preview.estimates.expected.revenue)} ${preview.currency_code}`],
-        ["Fuel cost", `${money(preview.costs.fuel_cost)} ${preview.currency_code}`],
-        ["Maintenance reserve", `${money(preview.costs.maintenance_cost)} ${preview.currency_code}`],
-        ["Crew estimate", `${money(preview.costs.staff_cost)} ${preview.currency_code}`],
-        ["Expected profit", `${money(preview.estimates.expected.profit)} ${preview.currency_code}`]
+    <div class="economic-preview-grid">
+      <section class="detail-section economic-preview-hero">
+        <h3>${escapeHtml(preview.origin_airport_icao_code)} → ${escapeHtml(preview.destination_airport_icao_code)}</h3>
+        <p class="muted">
+          Forecast based on ${escapeHtml(previewAircraftLabel(aircraft))}.
+          If multiple aircraft are selected, Icaro Ops prices the flight using the most expensive compatible aircraft.
+        </p>
+        <div class="economic-preview-kpis">
+          ${previewKpi("Distance", `${money(preview.planned_distance_km)} km`)}
+          ${previewKpi("Duration", `${escapeHtml(preview.planned_duration_minutes)} min`)}
+          ${previewKpi("Capacity", `${escapeHtml(preview.passenger_capacity)} pax`)}
+          ${previewKpi("Ticket", formatPreviewMoney(preview.ticket_price, currency))}
+          ${previewKpi("Suggested", formatPreviewMoney(preview.suggested_ticket_price, currency))}
+          ${previewKpi("Break-even pax", preview.break_even_passengers ?? "-")}
+        </div>
+        <p class="economic-preview-recommendation">${escapeHtml(preview.recommendation || "")}</p>
+      </section>
+
+      ${section("Flight operating costs", [
+        ["Fuel", formatPreviewMoney(preview.costs?.fuel_cost, currency)],
+        ["Maintenance reserve", formatPreviewMoney(preview.costs?.maintenance_cost, currency)],
+        ["Crew", formatPreviewMoney(preview.costs?.staff_cost, currency)],
+        ["Total operating cost", formatPreviewMoney(preview.costs?.total_operating_cost, currency)],
+        ["Break-even ticket at 75%", formatPreviewMoney(preview.break_even_ticket_at_expected_load, currency)]
       ])}
     </div>
+
+    <section class="detail-section economic-preview-section">
+      <h3>Profit forecast by passenger load</h3>
+      <p class="muted">These scenarios show what happens if the aircraft departs with different passenger loads.</p>
+      ${renderEconomicScenarioTable(scenarios, currency)}
+    </section>
+
+    ${aircraftPreviews.length > 1 ? `
+      <section class="detail-section economic-preview-section">
+        <h3>Selected aircraft comparison</h3>
+        <p class="muted">The suggested ticket protects the most expensive selected aircraft, so cheaper aircraft should have better margins.</p>
+        ${renderAircraftPreviewTable(aircraftPreviews, currency)}
+      </section>
+    ` : ""}
+
+    <section class="detail-section economic-preview-section">
+      <h3>Cost model notes</h3>
+      <ul class="economic-preview-notes">
+        <li>${escapeHtml(preview.cost_model?.fuel_note || "Fuel cost is estimated from aircraft fuel burn and block time.")}</li>
+        <li>${escapeHtml(preview.cost_model?.maintenance_note || "Maintenance reserve is charged per estimated flight hour.")}</li>
+        <li>${escapeHtml(preview.cost_model?.fixed_cost_note || "Fixed company costs are not included in this single-flight preview.")}</li>
+        <li>Qualified pilots found: ${escapeHtml(preview.cost_model?.qualified_pilots_found ?? 0)} / ${escapeHtml(preview.cost_model?.required_pilots ?? 2)}</li>
+      </ul>
+    </section>
   `;
+}
+
+function renderEconomicScenarioTable(scenarios, currency) {
+  if (!scenarios.length) {
+    return `<p class="muted">No scenarios available.</p>`;
+  }
+
+  return `
+    <div class="table-wrap economic-preview-table-wrap">
+      <table class="economic-preview-table">
+        <thead>
+          <tr>
+            <th>Load</th>
+            <th>Pax</th>
+            <th>Revenue</th>
+            <th>Fuel</th>
+            <th>Maintenance</th>
+            <th>Crew</th>
+            <th>Total cost</th>
+            <th>Profit</th>
+            <th>Break-even ticket</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${scenarios.map(row => `
+            <tr>
+              <td>${escapeHtml(row.load_factor_percent)}%</td>
+              <td>${escapeHtml(row.passengers)}</td>
+              <td>${formatPreviewMoney(row.revenue, currency)}</td>
+              <td>${formatPreviewMoney(row.fuel_cost, currency)}</td>
+              <td>${formatPreviewMoney(row.maintenance_cost, currency)}</td>
+              <td>${formatPreviewMoney(row.staff_cost, currency)}</td>
+              <td>${formatPreviewMoney(row.total_operating_cost, currency)}</td>
+              <td class="${previewProfitClass(row.profit)}">${formatPreviewMoney(row.profit, currency)}</td>
+              <td>${formatPreviewMoney(row.break_even_ticket_price, currency)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAircraftPreviewTable(rows, currency) {
+  return `
+    <div class="table-wrap economic-preview-table-wrap">
+      <table class="economic-preview-table">
+        <thead>
+          <tr>
+            <th>Aircraft</th>
+            <th>Capacity</th>
+            <th>Duration</th>
+            <th>Total cost</th>
+            <th>75% pax</th>
+            <th>75% profit</th>
+            <th>Break-even ticket</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(row => `
+            <tr>
+              <td>${escapeHtml(previewAircraftLabel(row.aircraft || {}))}</td>
+              <td>${escapeHtml(row.passenger_capacity)}</td>
+              <td>${escapeHtml(row.planned_duration_minutes)} min</td>
+              <td>${formatPreviewMoney(row.costs?.total_operating_cost, currency)}</td>
+              <td>${escapeHtml(row.expected_passengers)}</td>
+              <td class="${previewProfitClass(row.expected_profit)}">${formatPreviewMoney(row.expected_profit, currency)}</td>
+              <td>${formatPreviewMoney(row.break_even_ticket_at_expected_load, currency)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function previewKpi(label, value) {
+  return `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`;
+}
+
+function previewAircraftLabel(aircraft) {
+  return [aircraft.icao_type_code || aircraft.model_code, aircraft.manufacturer, aircraft.model_name]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function formatPreviewMoney(value, currencyCode) {
+  const amount = Number(value || 0).toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+
+  if (currencyCode === "EUR") {
+    return `€ ${amount}`;
+  }
+
+  if (currencyCode === "USD") {
+    return `$ ${amount}`;
+  }
+
+  return `${amount} ${currencyCode || ""}`.trim();
+}
+
+function previewProfitClass(value) {
+  return Number(value || 0) >= 0 ? "profit-positive" : "profit-negative";
 }
 
 
