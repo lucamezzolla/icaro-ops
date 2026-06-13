@@ -738,3 +738,38 @@ dialog .dialog-footer {
     grid-template-columns: 1fr;
   }
 }
+
+.economic-aircraft-selector {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 4px;
+}
+
+.economic-aircraft-selector span {
+  color: var(--muted);
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  font-weight: 800;
+}
+
+.economic-aircraft-selector select {
+  width: 100%;
+}
+
+.economic-aircraft-selected-row {
+  outline: 2px solid rgba(115,215,255,.45);
+  outline-offset: -2px;
+  background: rgba(115,215,255,.08);
+}
+
+.economic-preview-note-cell {
+  white-space: normal !important;
+  min-width: 280px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.passenger-demand-table {
+  min-width: 1260px;
+}

@@ -425,6 +425,7 @@ async function previewFlight(options = {}) {
 
   try {
     const preview = await postJson(API.preview, payload);
+    lastEconomicPreview = preview;
     lastSuggestedTicketPrice = Number(preview.suggested_ticket_price || 0);
 
     if (Number(payload.ticket_price || 0) <= 0 && lastSuggestedTicketPrice > 0) {
@@ -433,6 +434,7 @@ async function previewFlight(options = {}) {
 
     if (!silent && content) {
       content.innerHTML = renderPreview(preview);
+      bindEconomicAircraftSelector(preview);
     }
   } catch (error) {
     if (!silent && content) {
@@ -646,11 +648,19 @@ function ensureAircraftModelDialog() {
   return dialog;
 }
 
-function renderPreview(preview) {
+function renderPreview(preview, selectedAircraftId = null) {
   const currency = preview.currency_code || "EUR";
-  const scenarios = preview.load_factor_scenarios || [];
   const aircraftPreviews = preview.aircraft_previews || [];
-  const aircraft = preview.aircraft || {};
+  const selectedPreview = selectedEconomicAircraftPreview(preview, selectedAircraftId);
+  const aircraft = selectedPreview?.aircraft || preview.aircraft || {};
+  const scenarios = selectedPreview?.load_factor_scenarios || preview.load_factor_scenarios || [];
+  const demandScenarios = selectedPreview?.demand_scenarios || preview.demand_scenarios || [];
+  const costs = selectedPreview?.costs || preview.costs || {};
+  const passengerCapacity = selectedPreview?.passenger_capacity ?? preview.passenger_capacity;
+  const plannedDuration = selectedPreview?.planned_duration_minutes ?? preview.planned_duration_minutes;
+  const suggestedTicket = selectedPreview?.suggested_ticket_price ?? preview.suggested_ticket_price;
+  const breakEvenTicketAtExpectedLoad = selectedPreview?.break_even_ticket_at_expected_load ?? preview.break_even_ticket_at_expected_load;
+  const expectedPassengers = selectedPreview?.expected_passengers ?? preview.break_even_passengers ?? "-";
 
   return `
     <div class="economic-preview-grid">
@@ -658,53 +668,107 @@ function renderPreview(preview) {
         <h3>${escapeHtml(preview.origin_airport_icao_code)} → ${escapeHtml(preview.destination_airport_icao_code)}</h3>
         <p class="muted">
           Forecast based on ${escapeHtml(previewAircraftLabel(aircraft))}.
-          If multiple aircraft are selected, Icaro Ops prices the flight using the most expensive compatible aircraft.
+          Use the aircraft selector to compare cost and passenger demand for every compatible airplane model selected for this flight.
         </p>
+        ${renderEconomicAircraftSelector(aircraftPreviews, aircraft)}
         <div class="economic-preview-kpis">
           ${previewKpi("Distance", `${money(preview.planned_distance_km)} km`)}
-          ${previewKpi("Duration", `${escapeHtml(preview.planned_duration_minutes)} min`)}
-          ${previewKpi("Capacity", `${escapeHtml(preview.passenger_capacity)} pax`)}
+          ${previewKpi("Duration", `${escapeHtml(plannedDuration)} min`)}
+          ${previewKpi("Capacity", `${escapeHtml(passengerCapacity)} pax`)}
           ${previewKpi("Ticket", formatPreviewMoney(preview.ticket_price, currency))}
-          ${previewKpi("Suggested", formatPreviewMoney(preview.suggested_ticket_price, currency))}
-          ${previewKpi("Break-even pax", preview.break_even_passengers ?? "-")}
+          ${previewKpi("Market suggested", formatPreviewMoney(suggestedTicket, currency))}
+          ${previewKpi("Expected pax", expectedPassengers)}
         </div>
         <p class="economic-preview-recommendation">${escapeHtml(preview.recommendation || "")}</p>
       </section>
 
-      ${section("Flight operating costs", [
-        ["Fuel", formatPreviewMoney(preview.costs?.fuel_cost, currency)],
-        ["Maintenance reserve", formatPreviewMoney(preview.costs?.maintenance_cost, currency)],
-        ["Crew", formatPreviewMoney(preview.costs?.staff_cost, currency)],
-        ["Total operating cost", formatPreviewMoney(preview.costs?.total_operating_cost, currency)],
-        ["Break-even ticket at 75%", formatPreviewMoney(preview.break_even_ticket_at_expected_load, currency)]
+      ${section("Flight operating costs for selected aircraft", [
+        ["Fuel", formatPreviewMoney(costs?.fuel_cost, currency)],
+        ["Maintenance reserve", formatPreviewMoney(costs?.maintenance_cost, currency)],
+        ["Crew", formatPreviewMoney(costs?.staff_cost, currency)],
+        ["Total operating cost", formatPreviewMoney(costs?.total_operating_cost, currency)],
+        ["Break-even ticket at 75%", formatPreviewMoney(breakEvenTicketAtExpectedLoad, currency)]
       ])}
     </div>
 
     <section class="detail-section economic-preview-section">
-      <h3>Profit forecast by passenger load</h3>
-      <p class="muted">Break-even is the minimum cost-covering price. Market recommended ticket rises with demand, seat scarcity and aircraft prestige.</p>
+      <h3>Profit forecast by fixed passenger load</h3>
+      <p class="muted">Break-even is the minimum cost-covering price. Market ticket rises with demand, seat scarcity and aircraft prestige.</p>
       ${renderEconomicScenarioTable(scenarios, currency)}
+    </section>
+
+    <section class="detail-section economic-preview-section">
+      <h3>Passenger demand scenarios</h3>
+      <p class="muted">These scenarios estimate passengers from market climate, route distance, selected ticket price and aircraft prestige. They are a planning model, not a guaranteed booking result.</p>
+      ${renderPassengerDemandScenarioTable(demandScenarios, currency)}
     </section>
 
     ${aircraftPreviews.length > 1 ? `
       <section class="detail-section economic-preview-section">
         <h3>Selected aircraft comparison</h3>
-        <p class="muted">The suggested ticket protects the most expensive selected aircraft, so cheaper aircraft should have better margins.</p>
-        ${renderAircraftPreviewTable(aircraftPreviews, currency)}
+        <p class="muted">Each row uses the same route and ticket price, but aircraft-specific fuel, maintenance, crew, speed and capacity.</p>
+        ${renderAircraftPreviewTable(aircraftPreviews, currency, aircraft)}
       </section>
     ` : ""}
 
     <section class="detail-section economic-preview-section">
-      <h3>Cost model notes</h3>
+      <h3>Cost and passenger model notes</h3>
       <ul class="economic-preview-notes">
         <li>${escapeHtml(preview.cost_model?.fuel_note || "Fuel cost is estimated from aircraft fuel burn and block time.")}</li>
         <li>${escapeHtml(preview.cost_model?.maintenance_note || "Maintenance reserve is charged per estimated flight hour.")}</li>
         <li>${escapeHtml(preview.cost_model?.fixed_cost_note || "Fixed company costs are not included in this single-flight preview.")}</li>
         <li>${escapeHtml(preview.cost_model?.market_pricing_note || "Market recommended ticket rises with demand and seat scarcity; break-even remains the minimum cost-covering price.")}</li>
-        <li>Qualified pilots found: ${escapeHtml(preview.cost_model?.qualified_pilots_found ?? 0)} / ${escapeHtml(preview.cost_model?.required_pilots ?? 2)}</li>
+        <li>${escapeHtml(preview.cost_model?.passenger_demand_note || "Passenger forecasts are scenario-based and adjust expected load by market climate, ticket price and aircraft prestige.")}</li>
+        <li>Qualified pilots found: ${escapeHtml(selectedPreview?.qualified_pilots_found ?? preview.cost_model?.qualified_pilots_found ?? 0)} / ${escapeHtml(preview.cost_model?.required_pilots ?? 2)}</li>
       </ul>
     </section>
   `;
+}
+
+function selectedEconomicAircraftPreview(preview, selectedAircraftId = null) {
+  const rows = preview.aircraft_previews || [];
+  if (!rows.length) {
+    return null;
+  }
+
+  const wantedId = selectedAircraftId || preview.selected_aircraft_preview_id || preview.aircraft?.id;
+  return rows.find(row => String(row.aircraft?.id || "") === String(wantedId || "")) || rows[0];
+}
+
+function renderEconomicAircraftSelector(rows, selectedAircraft) {
+  if (!rows || rows.length <= 1) {
+    return "";
+  }
+
+  const selectedId = String(selectedAircraft?.id || "");
+
+  return `
+    <label class="economic-aircraft-selector">
+      <span>Aircraft cost model</span>
+      <select id="economicAircraftSelector">
+        ${rows.map(row => {
+          const aircraft = row.aircraft || {};
+          const id = String(aircraft.id || "");
+          return `<option value="${escapeHtml(id)}" ${id === selectedId ? "selected" : ""}>${escapeHtml(previewAircraftLabel(aircraft))}</option>`;
+        }).join("")}
+      </select>
+    </label>
+  `;
+}
+
+function bindEconomicAircraftSelector(preview) {
+  const selector = document.querySelector("#economicAircraftSelector");
+  const content = document.querySelector("#economicPreviewContent");
+
+  if (!selector || !content || selector.dataset.bound) {
+    return;
+  }
+
+  selector.dataset.bound = "true";
+  selector.addEventListener("change", () => {
+    content.innerHTML = renderPreview(preview, selector.value);
+    bindEconomicAircraftSelector(preview);
+  });
 }
 
 function renderEconomicScenarioTable(scenarios, currency) {
@@ -754,7 +818,50 @@ function renderEconomicScenarioTable(scenarios, currency) {
   `;
 }
 
-function renderAircraftPreviewTable(rows, currency) {
+function renderPassengerDemandScenarioTable(rows, currency) {
+  if (!rows.length) {
+    return `<p class="muted">No passenger demand scenarios available.</p>`;
+  }
+
+  return `
+    <div class="table-wrap economic-preview-table-wrap">
+      <table class="economic-preview-table passenger-demand-table">
+        <thead>
+          <tr>
+            <th>Market climate</th>
+            <th>Demand index</th>
+            <th>Estimated load</th>
+            <th>Pax</th>
+            <th>Ticket</th>
+            <th>Revenue</th>
+            <th>Total cost</th>
+            <th>Profit</th>
+            <th>Calculation</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map(row => `
+            <tr>
+              <td>${escapeHtml(row.scenario_name || row.scenario_code || "-")}</td>
+              <td>${escapeHtml(row.demand_index || "-")}</td>
+              <td>${escapeHtml(row.load_factor_percent || "-")}%</td>
+              <td>${escapeHtml(row.passengers || 0)}</td>
+              <td>${formatPreviewMoney(row.ticket_price, currency)}</td>
+              <td>${formatPreviewMoney(row.revenue, currency)}</td>
+              <td>${formatPreviewMoney(row.total_operating_cost, currency)}</td>
+              <td class="${previewProfitClass(row.profit)}">${formatPreviewMoney(row.profit, currency)}</td>
+              <td class="economic-preview-note-cell">${escapeHtml(row.calculation_note || "-")}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAircraftPreviewTable(rows, currency, selectedAircraft = {}) {
+  const selectedId = String(selectedAircraft?.id || "");
+
   return `
     <div class="table-wrap economic-preview-table-wrap">
       <table class="economic-preview-table">
@@ -763,24 +870,34 @@ function renderAircraftPreviewTable(rows, currency) {
             <th>Aircraft</th>
             <th>Capacity</th>
             <th>Duration</th>
+            <th>Fuel</th>
+            <th>Maintenance</th>
+            <th>Crew</th>
             <th>Total cost</th>
             <th>75% pax</th>
             <th>75% profit</th>
-            <th>Break-even ticket</th>
+            <th>Market ticket</th>
           </tr>
         </thead>
         <tbody>
-          ${rows.map(row => `
-            <tr>
-              <td>${escapeHtml(previewAircraftLabel(row.aircraft || {}))}</td>
-              <td>${escapeHtml(row.passenger_capacity)}</td>
-              <td>${escapeHtml(row.planned_duration_minutes)} min</td>
-              <td>${formatPreviewMoney(row.costs?.total_operating_cost, currency)}</td>
-              <td>${escapeHtml(row.expected_passengers)}</td>
-              <td class="${previewProfitClass(row.expected_profit)}">${formatPreviewMoney(row.expected_profit, currency)}</td>
-              <td>${formatPreviewMoney(row.break_even_ticket_at_expected_load, currency)}</td>
-            </tr>
-          `).join("")}
+          ${rows.map(row => {
+            const aircraft = row.aircraft || {};
+            const active = String(aircraft.id || "") === selectedId;
+            return `
+              <tr class="${active ? "economic-aircraft-selected-row" : ""}">
+                <td>${escapeHtml(previewAircraftLabel(aircraft))}</td>
+                <td>${escapeHtml(row.passenger_capacity)}</td>
+                <td>${escapeHtml(row.planned_duration_minutes)} min</td>
+                <td>${formatPreviewMoney(row.costs?.fuel_cost, currency)}</td>
+                <td>${formatPreviewMoney(row.costs?.maintenance_cost, currency)}</td>
+                <td>${formatPreviewMoney(row.costs?.staff_cost, currency)}</td>
+                <td>${formatPreviewMoney(row.costs?.total_operating_cost, currency)}</td>
+                <td>${escapeHtml(row.expected_passengers)}</td>
+                <td class="${previewProfitClass(row.expected_profit)}">${formatPreviewMoney(row.expected_profit, currency)}</td>
+                <td>${formatPreviewMoney(row.suggested_ticket_price, currency)}</td>
+              </tr>
+            `;
+          }).join("")}
         </tbody>
       </table>
     </div>

@@ -127,6 +127,7 @@ json_response([
     'passenger_capacity' => (int)$selectedPreview['passenger_capacity'],
     'costs' => public_costs($selectedPreview['costs']),
     'load_factor_scenarios' => $selectedPreview['load_factor_scenarios'],
+    'demand_scenarios' => $selectedPreview['demand_scenarios'],
     'estimates' => legacy_estimates($selectedPreview['load_factor_scenarios']),
     'break_even_passengers' => $breakEvenPassengers,
     'break_even_ticket_at_expected_load' => money((float)$selectedPreview['break_even_ticket_at_expected_load_raw']),
@@ -136,6 +137,7 @@ json_response([
         'maintenance_note' => 'Maintenance reserve is the aircraft hourly maintenance cost multiplied by estimated block hours.',
         'fixed_cost_note' => 'Daily retainers and company fixed costs are not charged to this single-flight preview.',
         'market_pricing_note' => 'Market recommended ticket uses the 75% load scenario as reference, then adjusts by expected demand, seat scarcity and aircraft prestige.',
+        'passenger_demand_note' => 'Passenger forecasts are scenario-based: crisis, weak market, normal market, strong market and boom adjust expected load by demand climate, ticket price and aircraft prestige.',
         'selected_reference_pilots' => $selectedPreview['pilots'],
         'qualified_pilots_found' => (int)$selectedPreview['qualified_pilots_found'],
         'required_pilots' => 2,
@@ -289,6 +291,7 @@ function build_aircraft_preview(PDO $pdo, int $companyId, array $model, float $d
         'expected_passengers' => $expectedPassengers,
         'expected_profit_raw' => ($expectedPassengers * $ticketPrice) - $totalCost,
         'break_even_ticket_at_expected_load_raw' => $breakEvenTicketExpected,
+        'market_reference_ticket_price_raw' => $marketReferenceTicket,
         'costs' => [
             'fuel_cost_raw' => $fuelCost,
             'maintenance_cost_raw' => $maintenanceCost,
@@ -296,6 +299,7 @@ function build_aircraft_preview(PDO $pdo, int $companyId, array $model, float $d
             'total_operating_cost_raw' => $totalCost,
         ],
         'load_factor_scenarios' => $scenarios,
+        'demand_scenarios' => build_passenger_demand_scenarios($capacity, $ticketPrice, $marketReferenceTicket, $totalCost, $model, $distanceKm),
         'pilots' => array_map(static function (array $pilot): array {
             return [
                 'id' => (int)$pilot['id'],
@@ -350,6 +354,112 @@ function fetch_reference_pilots(PDO $pdo, int $companyId, string $modelCode): ar
     return $stmt->fetchAll();
 }
 
+
+function build_passenger_demand_scenarios(
+    int $capacity,
+    float $ticketPrice,
+    float $marketReferenceTicket,
+    float $totalCost,
+    array $aircraft,
+    float $distanceKm
+): array {
+    $effectiveTicket = $ticketPrice > 0 ? $ticketPrice : $marketReferenceTicket;
+    $referenceTicket = max(1.0, $marketReferenceTicket);
+    $prestige = aircraft_prestige_multiplier($aircraft);
+
+    $states = [
+        ['code' => 'CRISIS', 'label' => 'Crisis', 'base_load' => 0.35, 'demand_index' => 0.55],
+        ['code' => 'WEAK', 'label' => 'Weak market', 'base_load' => 0.55, 'demand_index' => 0.75],
+        ['code' => 'NORMAL', 'label' => 'Normal market', 'base_load' => 0.72, 'demand_index' => 1.00],
+        ['code' => 'STRONG', 'label' => 'Strong market', 'base_load' => 0.88, 'demand_index' => 1.20],
+        ['code' => 'BOOM', 'label' => 'Full success / boom', 'base_load' => 0.98, 'demand_index' => 1.40],
+    ];
+
+    $distanceAdjustment = passenger_distance_load_adjustment($distanceKm);
+    $priceRatio = $effectiveTicket / $referenceTicket;
+    $pricePenalty = max(0.0, $priceRatio - 1.0);
+    $priceDiscount = max(0.0, 1.0 - $priceRatio);
+    $priceElasticity = passenger_price_elasticity($aircraft);
+
+    $rows = [];
+    foreach ($states as $state) {
+        $prestigeAdjustment = ($prestige - 1.0) * 0.12;
+        $loadFactor = (float)$state['base_load']
+            + $distanceAdjustment
+            + $prestigeAdjustment
+            - ($pricePenalty * $priceElasticity)
+            + ($priceDiscount * 0.10);
+
+        $loadFactor = max(0.05, min(1.0, $loadFactor));
+        $passengers = max(1, min($capacity, (int)floor($capacity * $loadFactor)));
+        $revenue = $passengers * $effectiveTicket;
+        $profit = $revenue - $totalCost;
+
+        $rows[] = [
+            'scenario_code' => $state['code'],
+            'scenario_name' => $state['label'],
+            'demand_index' => money((float)$state['demand_index']),
+            'load_factor_percent' => money($loadFactor * 100.0),
+            'passengers' => $passengers,
+            'ticket_price' => money($effectiveTicket),
+            'market_reference_ticket_price' => money($marketReferenceTicket),
+            'revenue' => money($revenue),
+            'total_operating_cost' => money($totalCost),
+            'profit' => money($profit),
+            'calculation_note' => passenger_calculation_note($state['label'], $priceRatio, $distanceAdjustment, $prestige),
+        ];
+    }
+
+    return $rows;
+}
+
+function passenger_distance_load_adjustment(float $distanceKm): float
+{
+    if ($distanceKm < 300) {
+        return -0.05;
+    }
+
+    if ($distanceKm > 6500) {
+        return -0.04;
+    }
+
+    if ($distanceKm >= 900 && $distanceKm <= 3500) {
+        return 0.03;
+    }
+
+    return 0.0;
+}
+
+function passenger_price_elasticity(array $aircraft): float
+{
+    $modelCode = strtoupper((string)($aircraft['model_code'] ?? ''));
+    $icaoCode = strtoupper((string)($aircraft['icao_type_code'] ?? ''));
+    $modelName = strtoupper((string)($aircraft['model_name'] ?? ''));
+
+    if ($icaoCode === 'CONC' || str_contains($modelCode, 'CONC') || str_contains($modelName, 'CONCORDE')) {
+        return 0.18;
+    }
+
+    return 0.32;
+}
+
+function passenger_calculation_note(string $stateLabel, float $priceRatio, float $distanceAdjustment, float $prestige): string
+{
+    $priceText = $priceRatio > 1.05
+        ? 'ticket above market reference reduces demand'
+        : ($priceRatio < 0.95 ? 'ticket below market reference supports demand' : 'ticket near market reference');
+
+    $distanceText = $distanceAdjustment > 0
+        ? 'route distance supports demand'
+        : ($distanceAdjustment < 0 ? 'route distance slightly reduces demand' : 'neutral route distance');
+
+    $prestigeText = $prestige > 1.01
+        ? 'aircraft prestige supports demand'
+        : 'standard aircraft prestige';
+
+    return $stateLabel . ': ' . $priceText . '; ' . $distanceText . '; ' . $prestigeText . '.';
+}
+
 function select_pricing_preview(array $previews): array
 {
     usort($previews, static function (array $a, array $b): int {
@@ -370,6 +480,9 @@ function public_aircraft_preview(array $preview): array
         'expected_passengers' => (int)$preview['expected_passengers'],
         'expected_profit' => money((float)$preview['expected_profit_raw']),
         'break_even_ticket_at_expected_load' => money((float)$preview['break_even_ticket_at_expected_load_raw']),
+        'suggested_ticket_price' => money((float)$preview['market_reference_ticket_price_raw']),
+        'load_factor_scenarios' => $preview['load_factor_scenarios'],
+        'demand_scenarios' => $preview['demand_scenarios'],
         'qualified_pilots_found' => (int)$preview['qualified_pilots_found'],
     ];
 }
